@@ -38,7 +38,7 @@ func ReadCsv(path string) [][]string {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer f.Close()
+	defer CloseFile(f)
 	res, err := csv.NewReader(f).ReadAll()
 	if err != nil {
 		log.Fatal(err)
@@ -46,9 +46,18 @@ func ReadCsv(path string) [][]string {
 	return res
 }
 
-func WriteToFile(file *os.File, b []byte) {
-	defer file.Close()
-	if _, err := file.Write(b); err != nil {
+func WriteToFile(f *os.File, b []byte) {
+	if _, err := f.Write(b); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := f.Write([]byte{'\n'}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func CloseFile(file *os.File) {
+	err := file.Close()
+	if err != nil {
 		log.Fatal(err)
 	}
 }

@@ -3,15 +3,17 @@ package webtest
 import (
 	"bytes"
 	"fmt"
-	"net/http"
-
 	"github.com/fatih/color"
+	"log"
+	"net/http"
+	"os"
 )
 
 type WebClient struct {
 	client    http.Client
 	headers   *map[string]string
 	transport *Transport
+	options   *WebClientOptions
 }
 
 func InitWebClient() *WebClient {
@@ -55,6 +57,11 @@ func (w *WebClient) Headers(m *map[string]string) *WebClient {
 	return w
 }
 
+func (w *WebClient) Options(o *WebClientOptions) *WebClient {
+	w.options = o
+	return w
+}
+
 func SetHeaders(r *http.Request, m map[string]string) {
 	for k, v := range m {
 		r.Header.Set(k, v)
@@ -87,7 +94,7 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 	}
 
 	res, err := w.client.Do(req)
-	s := res.Status + " " + url + " " + fmt.Sprintf("%.3fs", w.transport.Duration().Seconds())
+	s := req.Method + " " + url + " " + res.Status + " " + fmt.Sprintf("%.3fs", w.transport.Duration().Seconds())
 	if Is2xxSuccessful(res) {
 		color.Green(s)
 	} else if Is3xxRedirection(res) {
@@ -96,5 +103,13 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		color.HiRed(s)
 	}
 
+	if w.options.WriteToFile {
+		if f, err := os.OpenFile(w.options.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err != nil {
+			log.Fatal(err)
+		} else {
+			WriteToFile(f, []byte(s))
+			CloseFile(f)
+		}
+	}
 	return res, err
 }
