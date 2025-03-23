@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/fatih/color"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 )
 
@@ -33,17 +35,17 @@ func (w *WebClient) Get(url string) (*http.Response, error) {
 }
 
 func (w *WebClient) Post(url string, body []byte) (*http.Response, error) {
-	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
 	return w.execute(req, url)
 }
 
 func (w *WebClient) Patch(url string, body []byte) (*http.Response, error) {
-	req, _ := http.NewRequest(http.MethodPatch, url, bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
 	return w.execute(req, url)
 }
 
 func (w *WebClient) Put(url string, body []byte) (*http.Response, error) {
-	req, _ := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(body))
 	return w.execute(req, url)
 }
 
@@ -94,6 +96,12 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 	}
 
 	res, err := w.client.Do(req)
+	defer func(Body io.ReadCloser) {
+		if err = Body.Close(); err != nil {
+			log.Fatal(err)
+		}
+	}(res.Body)
+
 	s := req.Method + " " + url + " " + res.Status + " " + fmt.Sprintf("%.3fs", w.transport.Duration().Seconds())
 	if Is2xxSuccessful(res) {
 		color.Green(s)
@@ -112,4 +120,18 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		}
 	}
 	return res, err
+}
+
+func (w *WebClient) AddQueryParams(s string, m map[string]string) string {
+	parsed, err := url.Parse(s)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	q := parsed.Query()
+	for k, v := range m {
+		q.Add(k, v)
+	}
+	parsed.RawQuery = q.Encode()
+	return parsed.String()
 }
