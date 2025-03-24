@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/fatih/color"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -96,12 +95,6 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 	}
 
 	res, err := w.client.Do(req)
-	defer func(Body io.ReadCloser) {
-		if err = Body.Close(); err != nil {
-			log.Fatal(err)
-		}
-	}(res.Body)
-
 	s := req.Method + " " + url + " " + res.Status + " " + fmt.Sprintf("%.3fs", w.transport.Duration().Seconds())
 	if Is2xxSuccessful(res) {
 		color.Green(s)
