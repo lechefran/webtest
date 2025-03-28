@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 )
 
 type WebClient struct {
@@ -104,8 +105,16 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		color.HiRed(s)
 	}
 
-	if w.options.WriteToFile {
-		if f, err := os.OpenFile(w.options.FilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err != nil {
+	if w.options != nil && w.options.WriteToFile {
+		var fileName string
+		if w.options.FilePath != "" {
+			fileName = w.options.FilePath
+		} else {
+			fileName = "./" + string(time.Now().Format(time.RFC3339)) + ".log"
+			log.Println("Application logs will be saved to ", fileName)
+		}
+
+		if f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err != nil {
 			log.Fatal(err)
 		} else {
 			WriteToFile(f, []byte(s))

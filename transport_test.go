@@ -15,7 +15,10 @@ func TestInitTransport(t *testing.T) {
 
 func TestTransportDuration(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello, World!"))
+		_, err := w.Write([]byte("Hello, World!"))
+		if err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 
