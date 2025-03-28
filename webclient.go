@@ -26,32 +26,105 @@ func InitWebClient() *WebClient {
 		client: http.Client{
 			Transport: t,
 		},
+		options: &WebClientOptions{
+			HandleError: DEFAULT,
+		},
 	}
 }
 
 func (w *WebClient) Get(url string) (*http.Response, error) {
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	return w.execute(req, url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if w.options.HandleError != DEFAULT && err != nil {
+		if w.options.HandleError == SOFT {
+			color.HiRed("Error creating GET request: ", err)
+		} else if w.options.HandleError == STRICT {
+			return nil, err
+		}
+	}
+
+	res, err := w.execute(req, url)
+	if w.options.HandleError == SOFT && err != nil {
+		color.HiRed("Error executing GET request: ", err)
+		return res, nil
+	}
+	return res, err
 }
 
 func (w *WebClient) Post(url string, body []byte) (*http.Response, error) {
-	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	return w.execute(req, url)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	if w.options.HandleError != DEFAULT && err != nil {
+		if w.options.HandleError == SOFT {
+			color.HiRed("Error creating POST request: ", err)
+		} else if w.options.HandleError == STRICT {
+			return nil, err
+		}
+	}
+
+	res, err := w.execute(req, url)
+	if w.options.HandleError == SOFT && err != nil {
+		color.HiRed("Error executing POST request: ", err)
+		return res, nil
+	}
+	return res, err
 }
 
 func (w *WebClient) Patch(url string, body []byte) (*http.Response, error) {
-	req, _ := http.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
-	return w.execute(req, url)
+	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
+	if w.options.HandleError != DEFAULT && err != nil {
+		if w.options.HandleError == SOFT {
+			color.HiRed("Error creating PATCH request: ", err)
+		} else if w.options.HandleError == STRICT {
+			return nil, err
+		}
+	}
+
+	res, err := w.execute(req, url)
+	if w.options.HandleError == SOFT && err != nil {
+		color.HiRed("Error executing PATCH request: ", err)
+		return res, nil
+	}
+	return res, err
 }
 
 func (w *WebClient) Put(url string, body []byte) (*http.Response, error) {
-	req, _ := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(body))
-	return w.execute(req, url)
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(body))
+	if w.options.HandleError != DEFAULT && err != nil {
+		if w.options.HandleError == SOFT {
+			color.HiRed("Error creating PUT request: ", err)
+		} else if w.options.HandleError == STRICT {
+			return nil, err
+		}
+	}
+
+	res, err := w.execute(req, url)
+	if w.options.HandleError == SOFT && err != nil {
+		color.HiRed("Error executing PUT request: ", err)
+		return res, nil
+	}
+	return res, err
 }
 
 func (w *WebClient) Delete(url, p string) (*http.Response, error) {
-	req, _ := http.NewRequest(http.MethodDelete, url+p, nil)
-	return w.execute(req, url)
+	sanitizedUrl := url
+	if url[len(url)-1] != '/' {
+		sanitizedUrl += "/"
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, sanitizedUrl+p, nil)
+	if w.options.HandleError != DEFAULT && err != nil {
+		if w.options.HandleError == SOFT {
+			color.HiRed("Error creating DELETE request: ", err)
+		} else if w.options.HandleError == STRICT {
+			return nil, err
+		}
+	}
+
+	res, err := w.execute(req, sanitizedUrl+p)
+	if w.options.HandleError == SOFT && err != nil {
+		color.HiRed("Error executing DELETE request: ", err)
+		return res, nil
+	}
+	return res, err
 }
 
 func (w *WebClient) Headers(m *map[string]string) *WebClient {
@@ -96,6 +169,14 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 	}
 
 	res, err := w.client.Do(req)
+	if w.options.HandleError != DEFAULT && err != nil {
+		if w.options.HandleError == SOFT {
+			color.HiRed("Error executing request: ", err)
+		} else if w.options.HandleError == STRICT {
+			return nil, err
+		}
+	}
+
 	s := req.Method + " " + url + " " + res.Status + " " + fmt.Sprintf("%.3fs", w.transport.Duration().Seconds())
 	if Is2xxSuccessful(res) {
 		color.Green(s)
@@ -111,15 +192,25 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 			fileName = w.options.FilePath
 		} else {
 			fileName = "./" + string(time.Now().Format(time.RFC3339)) + ".log"
-			log.Println("Application logs will be saved to ", fileName)
+			color.HiBlue("Application logs will be saved to ", fileName)
 		}
 
 		if f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err != nil {
-			log.Fatal(err)
+			if w.options.HandleError != DEFAULT {
+				if w.options.HandleError == SOFT {
+					color.HiRed("Error creating or opening file: ", err)
+				} else if w.options.HandleError == STRICT {
+					return nil, err
+				}
+			}
 		} else {
 			WriteToFile(f, []byte(s))
 			CloseFile(f)
 		}
+	}
+
+	if w.options.HandleError == SOFT && err != nil {
+		return res, nil
 	}
 	return res, err
 }
