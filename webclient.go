@@ -104,13 +104,8 @@ func (w *WebClient) Put(url string, body []byte) (*http.Response, error) {
 	return res, err
 }
 
-func (w *WebClient) Delete(url, p string) (*http.Response, error) {
-	sanitizedUrl := url
-	if url[len(url)-1] != '/' {
-		sanitizedUrl += "/"
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, sanitizedUrl+p, nil)
+func (w *WebClient) Delete(url string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if w.options.HandleError != DEFAULT && err != nil {
 		if w.options.HandleError == SOFT {
 			color.HiRed("Error creating DELETE request: ", err)
@@ -119,7 +114,7 @@ func (w *WebClient) Delete(url, p string) (*http.Response, error) {
 		}
 	}
 
-	res, err := w.execute(req, sanitizedUrl+p)
+	res, err := w.execute(req, url)
 	if w.options.HandleError == SOFT && err != nil {
 		color.HiRed("Error executing DELETE request: ", err)
 		return res, nil
