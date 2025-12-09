@@ -151,7 +151,7 @@ func TestSuccessfulDelete(t *testing.T) {
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
 	client := InitWebClient().Headers(&headers)
-	res, err := client.Delete(server.URL, "")
+	res, err := client.Delete(server.URL)
 	if err != nil {
 		t.Error(err)
 	}
