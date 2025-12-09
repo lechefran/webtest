@@ -56,8 +56,7 @@ func WriteToFile(f *os.File, b []byte) {
 }
 
 func CloseFile(file *os.File) {
-	err := file.Close()
-	if err != nil {
+	if err := file.Close(); err != nil {
 		log.Fatal(err)
 	}
 }
