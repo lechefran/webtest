@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,100 +27,53 @@ func InitWebClient() *WebClient {
 		client: http.Client{
 			Transport: t,
 		},
-		options: &WebClientOptions{
-			HandleError: DEFAULT,
-		},
+		options: &WebClientOptions{},
 	}
 }
 
 func (w *WebClient) Get(url string) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if w.options.HandleError != DEFAULT && err != nil {
-		if w.options.HandleError == SOFT {
-			color.HiRed("Error creating GET request: ", err)
-		} else if w.options.HandleError == STRICT {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
 	}
 
-	res, err := w.execute(req, url)
-	if w.options.HandleError == SOFT && err != nil {
-		color.HiRed("Error executing GET request: ", err)
-		return res, nil
-	}
-	return res, err
+	return w.execute(req, url)
 }
 
 func (w *WebClient) Post(url string, body []byte) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if w.options.HandleError != DEFAULT && err != nil {
-		if w.options.HandleError == SOFT {
-			color.HiRed("Error creating POST request: ", err)
-		} else if w.options.HandleError == STRICT {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
 	}
 
-	res, err := w.execute(req, url)
-	if w.options.HandleError == SOFT && err != nil {
-		color.HiRed("Error executing POST request: ", err)
-		return res, nil
-	}
-	return res, err
+	return w.execute(req, url)
 }
 
 func (w *WebClient) Patch(url string, body []byte) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
-	if w.options.HandleError != DEFAULT && err != nil {
-		if w.options.HandleError == SOFT {
-			color.HiRed("Error creating PATCH request: ", err)
-		} else if w.options.HandleError == STRICT {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
 	}
 
-	res, err := w.execute(req, url)
-	if w.options.HandleError == SOFT && err != nil {
-		color.HiRed("Error executing PATCH request: ", err)
-		return res, nil
-	}
-	return res, err
+	return w.execute(req, url)
 }
 
 func (w *WebClient) Put(url string, body []byte) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(body))
-	if w.options.HandleError != DEFAULT && err != nil {
-		if w.options.HandleError == SOFT {
-			color.HiRed("Error creating PUT request: ", err)
-		} else if w.options.HandleError == STRICT {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
 	}
 
-	res, err := w.execute(req, url)
-	if w.options.HandleError == SOFT && err != nil {
-		color.HiRed("Error executing PUT request: ", err)
-		return res, nil
-	}
-	return res, err
+	return w.execute(req, url)
 }
 
 func (w *WebClient) Delete(url string) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
-	if w.options.HandleError != DEFAULT && err != nil {
-		if w.options.HandleError == SOFT {
-			color.HiRed("Error creating DELETE request: ", err)
-		} else if w.options.HandleError == STRICT {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
 	}
 
-	res, err := w.execute(req, url)
-	if w.options.HandleError == SOFT && err != nil {
-		color.HiRed("Error executing DELETE request: ", err)
-		return res, nil
-	}
-	return res, err
+	return w.execute(req, url)
 }
 
 func (w *WebClient) Headers(m *map[string]string) *WebClient {
@@ -130,6 +82,10 @@ func (w *WebClient) Headers(m *map[string]string) *WebClient {
 }
 
 func (w *WebClient) Options(o *WebClientOptions) *WebClient {
+	if o == nil {
+		w.options = &WebClientOptions{}
+		return w
+	}
 	w.options = o
 	return w
 }
@@ -169,12 +125,8 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 	}
 
 	res, err := w.client.Do(req)
-	if w.options != nil && w.options.HandleError != DEFAULT && err != nil {
-		if w.options.HandleError == SOFT {
-			color.HiRed("Error executing request: ", err)
-		} else if w.options.HandleError == STRICT {
-			return nil, err
-		}
+	if err != nil {
+		return res, err
 	}
 
 	var s string
@@ -202,53 +154,37 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		}
 
 		if f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err != nil {
-			if w.options.HandleError != DEFAULT {
-				if w.options.HandleError == SOFT {
-					color.HiRed("Error creating or opening file: ", err)
-				} else if w.options.HandleError == STRICT {
-					return nil, err
-				}
-			}
+			return res, err
 		} else {
-			WriteToFile(f, []byte(s))
-			CloseFile(f)
+			writeErr := WriteToFile(f, []byte(s))
+			closeErr := CloseFile(f)
+			if writeErr != nil {
+				return res, writeErr
+			}
+			if closeErr != nil {
+				return res, closeErr
+			}
 		}
 	}
 
 	w.client.CloseIdleConnections()
-	if w.options.HandleError == SOFT && err != nil {
-		return res, nil
-	}
 	return res, err
 }
 
-func (w *WebClient) CloseResponse(res *http.Response) {
+func (w *WebClient) CloseResponse(res *http.Response) error {
 	if res == nil || res.Body == nil {
-		return
+		return nil
 	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			switch {
-			case w.options != nil && w.options.HandleError == STRICT:
-				log.Fatal("panic while closing response body: ", r)
-			case w.options != nil && w.options.HandleError == SOFT:
-				color.HiRed("Recovered from panic while closing response body: ", r)
-			default:
-				log.Printf("Recovered from panic while closing response body: %v", r)
-			}
-		}
-	}()
-
-	if cerr := res.Body.Close(); cerr != nil {
-		panic(cerr)
+	if err := res.Body.Close(); err != nil {
+		return err
 	}
+	return nil
 }
 
-func (w *WebClient) AddQueryParams(s string, m map[string]string) string {
+func (w *WebClient) AddQueryParams(s string, m map[string]string) (string, error) {
 	parsed, err := url.Parse(s)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 
 	q := parsed.Query()
@@ -256,5 +192,5 @@ func (w *WebClient) AddQueryParams(s string, m map[string]string) string {
 		q.Add(k, v)
 	}
 	parsed.RawQuery = q.Encode()
-	return parsed.String()
+	return parsed.String(), nil
 }

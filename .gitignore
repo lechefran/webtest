@@ -23,3 +23,28 @@ go.work.sum
 
 # env file
 .env
+
+# Go build and test artifacts
+bin/
+dist/
+coverage.out
+*.coverprofile
+*.test
+
+# Go local workspace config
+go.work
+go.work.sum
+
+# Local config and secrets
+.env
+.env.*
+*.local
+config*.local
+config*.local.*
+*.json
+
+# Repository-local skills
+skills/
+
+# Repository-local agents
+agents.md

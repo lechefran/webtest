@@ -3,7 +3,6 @@ package webtest
 import (
 	"bytes"
 	"encoding/csv"
-	"log"
 	"os"
 )
 
@@ -33,30 +32,39 @@ func FormatStringArray(buf *bytes.Buffer, arr []string, delimiter string) *bytes
 	return buf
 }
 
-func ReadCsv(path string) [][]string {
+func ReadCsv(path string) ([][]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	defer CloseFile(f)
+	defer func() {
+		_ = CloseFile(f)
+	}()
+
 	res, err := csv.NewReader(f).ReadAll()
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	return res
+	return res, nil
 }
 
-func WriteToFile(f *os.File, b []byte) {
+func WriteToFile(f *os.File, b []byte) error {
 	if _, err := f.Write(b); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if _, err := f.Write([]byte{'\n'}); err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }
 
-func CloseFile(file *os.File) {
-	if err := file.Close(); err != nil {
-		log.Fatal(err)
+func CloseFile(file *os.File) error {
+	if file == nil {
+		return nil
 	}
+
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return nil
 }
