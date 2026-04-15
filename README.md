@@ -137,3 +137,16 @@ If you are upgrading from an older version:
 - `Options(nil)` is valid and resets to default options.
 - If `WriteToFile` is true and `FilePath` is empty, a timestamp-based log file is created in the current directory.
 - The console output colors requests by status class (2xx green, 3xx yellow, others red).
+
+## Timing Output
+
+Each request log line now reports per-request timing values:
+
+```text
+GET http://localhost:8080/resource 200 OK total=0.043s connect=0.007s
+GET http://localhost:8080/resource 200 OK total=0.012s conn=reused
+```
+
+- `total`: full elapsed time for that request (`client.Do` wall-clock duration).
+- `connect`: TCP connect time for new connections.
+- `conn=reused`: the request used an existing keep-alive connection, so no new connect step occurred.

@@ -13,7 +13,7 @@ func TestInitTransport(t *testing.T) {
 	}
 }
 
-func TestTransportDuration(t *testing.T) {
+func TestTransportRoundTrip(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := w.Write([]byte("Hello, World!"))
 		if err != nil {
@@ -30,25 +30,18 @@ func TestTransportDuration(t *testing.T) {
 	if !Is2xxSuccessful(res) {
 		t.Error(err)
 	}
-	if client.transport.connStart.IsZero() {
-		t.Error("Client made a request but connection start time was not updated")
+	if err := client.CloseResponse(res); err != nil {
+		t.Fatal(err)
 	}
-	if client.transport.connEnd.IsZero() {
-		t.Error("Client made a request but connection end time was not updated")
+}
+
+func TestInitTransportUsesDialContext(t *testing.T) {
+	transport := InitTransport()
+	httpTransport, ok := transport.rtp.(*http.Transport)
+	if !ok {
+		t.Fatal("expected transport.rtp to be *http.Transport")
 	}
-	if client.transport.reqStart.IsZero() {
-		t.Error("Client made a request but request start time was not updated")
-	}
-	if client.transport.reqEnd.IsZero() {
-		t.Error("Client made a request but request end time was not updated")
-	}
-	if client.transport.ReqDuration().Seconds() == 0.0 {
-		t.Error("Client made a request but client's transport request duration was not updated")
-	}
-	if client.transport.ConnDuration().Seconds() == 0.0 {
-		t.Error("Client made a request but client's transport connection duration was not updated")
-	}
-	if client.transport.Duration().Seconds() == 0.0 {
-		t.Error("Client made a request but client's transport duration was not updated")
+	if httpTransport.DialContext == nil {
+		t.Fatal("expected DialContext to be configured")
 	}
 }

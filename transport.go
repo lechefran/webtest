@@ -1,18 +1,15 @@
 package webtest
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"time"
 )
 
 type Transport struct {
-	rtp       http.RoundTripper
-	dialer    *net.Dialer
-	connStart time.Time
-	connEnd   time.Time
-	reqStart  time.Time
-	reqEnd    time.Time
+	rtp    http.RoundTripper
+	dialer *net.Dialer
 }
 
 func InitTransport() *Transport {
@@ -25,7 +22,7 @@ func InitTransport() *Transport {
 
 	t.rtp = &http.Transport{
 		Proxy:               http.ProxyFromEnvironment,
-		Dial:                t.dial,
+		DialContext:         t.dialContext,
 		TLSHandshakeTimeout: 10 * time.Second,
 	}
 
@@ -33,27 +30,9 @@ func InitTransport() *Transport {
 }
 
 func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
-	t.reqStart = time.Now()
-	res, err := t.rtp.RoundTrip(r)
-	t.reqEnd = time.Now()
-	return res, err
+	return t.rtp.RoundTrip(r)
 }
 
-func (t *Transport) dial(network, addr string) (net.Conn, error) {
-	t.connStart = time.Now()
-	conn, err := t.dialer.Dial(network, addr)
-	t.connEnd = time.Now()
-	return conn, err
-}
-
-func (t *Transport) Duration() time.Duration {
-	return t.ReqDuration() - t.ConnDuration()
-}
-
-func (t *Transport) ConnDuration() time.Duration {
-	return t.connEnd.Sub(t.connStart)
-}
-
-func (t *Transport) ReqDuration() time.Duration {
-	return t.reqEnd.Sub(t.reqStart)
+func (t *Transport) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return t.dialer.DialContext(ctx, network, addr)
 }

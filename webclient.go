@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"time"
@@ -137,14 +138,41 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		SetHeaders(req, *w.headers)
 	}
 
+	start := time.Now()
+	var connStart time.Time
+	var connDuration time.Duration
+	var connReused bool
+	trace := &httptrace.ClientTrace{
+		ConnectStart: func(_, _ string) {
+			connStart = time.Now()
+		},
+		ConnectDone: func(_, _ string, err error) {
+			if err != nil || connStart.IsZero() {
+				return
+			}
+			connDuration += time.Since(connStart)
+			connStart = time.Time{}
+		},
+		GotConn: func(info httptrace.GotConnInfo) {
+			connReused = info.Reused
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+
 	res, err := w.client.Do(req)
+	totalDuration := time.Since(start)
 	if err != nil {
 		return res, err
 	}
 
 	var s string
 	if res != nil {
-		s = req.Method + " " + url + " " + res.Status + " " + fmt.Sprintf("%.3fs", w.transport.Duration().Seconds())
+		s = req.Method + " " + url + " " + res.Status + " total=" + fmt.Sprintf("%.3fs", totalDuration.Seconds())
+		if connReused {
+			s += " conn=reused"
+		} else {
+			s += " connect=" + fmt.Sprintf("%.3fs", connDuration.Seconds())
+		}
 		if Is2xxSuccessful(res) {
 			color.Green(s)
 		} else if Is3xxRedirection(res) {
@@ -153,7 +181,12 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 			color.HiRed(s)
 		}
 	} else {
-		s = req.Method + " " + url + " ERROR " + fmt.Sprintf("%.3fs", w.transport.Duration().Seconds())
+		s = req.Method + " " + url + " ERROR total=" + fmt.Sprintf("%.3fs", totalDuration.Seconds())
+		if connReused {
+			s += " conn=reused"
+		} else {
+			s += " connect=" + fmt.Sprintf("%.3fs", connDuration.Seconds())
+		}
 		color.HiRed(s)
 	}
 
