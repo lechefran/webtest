@@ -170,6 +170,41 @@ func TestClientHeaders(t *testing.T) {
 	}
 }
 
+func TestOptionsNilNormalizesToDefault(t *testing.T) {
+	client := InitWebClient().Options(nil)
+
+	if client.options == nil {
+		t.Fatal("expected default options after passing nil options")
+	}
+	if client.options.WriteToFile {
+		t.Error("expected WriteToFile to default to false")
+	}
+	if client.options.FilePath != "" {
+		t.Error("expected FilePath to default to empty string")
+	}
+}
+
+func TestExecuteNormalizesNilOptions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("Hello, World!"))
+	}))
+	defer server.Close()
+
+	client := InitWebClient()
+	client.options = nil
+
+	res, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CloseResponse(res); err != nil {
+		t.Fatal(err)
+	}
+	if client.options == nil {
+		t.Fatal("expected options to be normalized during request execution")
+	}
+}
+
 func TestClientSetHeaders(t *testing.T) {
 	headers := map[string][]string{}
 	headers["Content-Type"] = []string{"application/html"}

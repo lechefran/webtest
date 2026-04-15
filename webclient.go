@@ -19,6 +19,17 @@ type WebClient struct {
 	options   *WebClientOptions
 }
 
+func defaultWebClientOptions() *WebClientOptions {
+	return &WebClientOptions{}
+}
+
+func (w *WebClient) normalizeOptions() *WebClientOptions {
+	if w.options == nil {
+		w.options = defaultWebClientOptions()
+	}
+	return w.options
+}
+
 func InitWebClient() *WebClient {
 	t := InitTransport()
 	return &WebClient{
@@ -27,7 +38,7 @@ func InitWebClient() *WebClient {
 		client: http.Client{
 			Transport: t,
 		},
-		options: &WebClientOptions{},
+		options: defaultWebClientOptions(),
 	}
 }
 
@@ -83,7 +94,7 @@ func (w *WebClient) Headers(m *map[string]string) *WebClient {
 
 func (w *WebClient) Options(o *WebClientOptions) *WebClient {
 	if o == nil {
-		w.options = &WebClientOptions{}
+		w.options = defaultWebClientOptions()
 		return w
 	}
 	w.options = o
@@ -117,6 +128,8 @@ func Is5xxServerError(r *http.Response) bool {
 }
 
 func (w *WebClient) execute(req *http.Request, url string) (*http.Response, error) {
+	opts := w.normalizeOptions()
+
 	if req == nil {
 		return nil, errors.New("request cannot be nil")
 	}
@@ -144,10 +157,10 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		color.HiRed(s)
 	}
 
-	if w.options != nil && w.options.WriteToFile {
+	if opts.WriteToFile {
 		var fileName string
-		if w.options.FilePath != "" {
-			fileName = w.options.FilePath
+		if opts.FilePath != "" {
+			fileName = opts.FilePath
 		} else {
 			fileName = "./" + string(time.Now().Format(time.RFC3339)) + ".log"
 			color.HiBlue("Application logs will be saved to ", fileName)
