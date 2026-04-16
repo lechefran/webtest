@@ -137,6 +137,7 @@ If you are upgrading from an older version:
 - `Options(nil)` is valid and resets to default options.
 - If `WriteToFile` is true and `FilePath` is empty, a timestamp-based log file is created in the current directory.
 - The console output colors requests by status class (2xx green, 3xx yellow, others red).
+- Idle connections are kept for pooling by default; call `client.CloseIdleConnections()` when you want to explicitly flush the pool.
 
 ## Timing Output
 

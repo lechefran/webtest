@@ -235,8 +235,11 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		}
 	}
 
-	w.client.CloseIdleConnections()
 	return res, err
+}
+
+func (w *WebClient) CloseIdleConnections() {
+	w.client.CloseIdleConnections()
 }
 
 func (w *WebClient) CloseResponse(res *http.Response) error {

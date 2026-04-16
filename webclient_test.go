@@ -161,6 +161,32 @@ func TestSuccessfulDelete(t *testing.T) {
 	}
 }
 
+func TestCloseIdleConnections(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("Hello, World!"))
+	}))
+	defer server.Close()
+
+	client := InitWebClient()
+	res, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CloseResponse(res); err != nil {
+		t.Fatal(err)
+	}
+
+	client.CloseIdleConnections()
+
+	res, err = client.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CloseResponse(res); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClientHeaders(t *testing.T) {
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
