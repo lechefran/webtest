@@ -119,6 +119,10 @@ func cloneStringMap(m map[string]string) map[string]string {
 	return cloned
 }
 
+func defaultLogFilePath(now time.Time) string {
+	return "./" + now.UTC().Format("20060102T150405Z") + ".log"
+}
+
 func (w *WebClient) snapshotConfig() (map[string]string, WebClientOptions) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -225,7 +229,7 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		if opts.FilePath != "" {
 			fileName = opts.FilePath
 		} else {
-			fileName = "./" + string(time.Now().Format(time.RFC3339)) + ".log"
+			fileName = defaultLogFilePath(time.Now())
 			color.HiBlue("Application logs will be saved to ", fileName)
 		}
 

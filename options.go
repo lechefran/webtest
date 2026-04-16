@@ -9,8 +9,8 @@ settings.
 		should be written to a file. Default value is false
 	- FilePath specifies the file directory and file name the logs will be written to.
 		If WriteToFile is set to true, but no FilePath value is explicitly assigned,
-		the WebClient will create a file with the naming format ./2006-01-02T15:04:05Z07:00.log
-		using the RFC3339 format.
+		the WebClient will create a file with the naming format ./YYYYMMDDThhmmssZ.log
+		using a Windows-safe UTC timestamp format.
 */
 type WebClientOptions struct {
 	WriteToFile bool   `json:"writeToFile"`

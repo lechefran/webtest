@@ -3,8 +3,10 @@ package webtest
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestInitWebClient(t *testing.T) {
@@ -348,6 +350,18 @@ func TestClientSetHeaders(t *testing.T) {
 	SetHeaders(&req, map[string]string{"key": "value"})
 	if req.Header.Get("key") != "value" {
 		t.Error("Request has no headers attached")
+	}
+}
+
+func TestDefaultLogFilePathUsesWindowsSafeTimestamp(t *testing.T) {
+	ts := time.Date(2026, time.April, 15, 20, 5, 6, 0, time.FixedZone("UTC-5", -5*60*60))
+	got := defaultLogFilePath(ts)
+	want := "./20260416T010506Z.log"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+	if strings.Contains(got, ":") {
+		t.Fatalf("expected filename without ':', got %q", got)
 	}
 }
 
