@@ -8,27 +8,18 @@ import (
 	"net/http/httptrace"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/fatih/color"
 )
 
 type WebClient struct {
+	mu        sync.RWMutex
 	client    http.Client
-	headers   *map[string]string
+	headers   map[string]string
 	transport *Transport
-	options   *WebClientOptions
-}
-
-func defaultWebClientOptions() *WebClientOptions {
-	return &WebClientOptions{}
-}
-
-func (w *WebClient) normalizeOptions() *WebClientOptions {
-	if w.options == nil {
-		w.options = defaultWebClientOptions()
-	}
-	return w.options
+	options   WebClientOptions
 }
 
 func InitWebClient() *WebClient {
@@ -39,7 +30,7 @@ func InitWebClient() *WebClient {
 		client: http.Client{
 			Transport: t,
 		},
-		options: defaultWebClientOptions(),
+		options: WebClientOptions{},
 	}
 }
 
@@ -89,23 +80,54 @@ func (w *WebClient) Delete(url string) (*http.Response, error) {
 }
 
 func (w *WebClient) Headers(m *map[string]string) *WebClient {
-	w.headers = m
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if m == nil {
+		w.headers = nil
+		return w
+	}
+	w.headers = cloneStringMap(*m)
 	return w
 }
 
 func (w *WebClient) Options(o *WebClientOptions) *WebClient {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if o == nil {
-		w.options = defaultWebClientOptions()
+		w.options = WebClientOptions{}
 		return w
 	}
-	w.options = o
+	w.options = *o
 	return w
 }
 
 func SetHeaders(r *http.Request, m map[string]string) {
+	if r == nil || m == nil {
+		return
+	}
 	for k, v := range m {
 		r.Header.Set(k, v)
 	}
+}
+
+func cloneStringMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(m))
+	for k, v := range m {
+		cloned[k] = v
+	}
+	return cloned
+}
+
+func (w *WebClient) snapshotConfig() (map[string]string, WebClientOptions) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	return cloneStringMap(w.headers), w.options
 }
 
 func Is2xxSuccessful(r *http.Response) bool {
@@ -129,13 +151,13 @@ func Is5xxServerError(r *http.Response) bool {
 }
 
 func (w *WebClient) execute(req *http.Request, url string) (*http.Response, error) {
-	opts := w.normalizeOptions()
-
 	if req == nil {
 		return nil, errors.New("request cannot be nil")
 	}
-	if w.headers != nil {
-		SetHeaders(req, *w.headers)
+	headers, opts := w.snapshotConfig()
+
+	if headers != nil {
+		SetHeaders(req, headers)
 	}
 
 	start := time.Now()
