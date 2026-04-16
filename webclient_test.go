@@ -14,6 +14,13 @@ func TestInitWebClient(t *testing.T) {
 	}
 }
 
+func assertCloseResponse(t *testing.T, client *WebClient, res *http.Response) {
+	t.Helper()
+	if err := client.CloseResponse(res); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSuccessfulGet(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, World!"))
@@ -25,8 +32,9 @@ func TestSuccessfulGet(t *testing.T) {
 	client := InitWebClient().Headers(headers)
 	res, err := client.Get(server.URL)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer assertCloseResponse(t, client, res)
 	if !Is2xxSuccessful(res) {
 		t.Fail()
 	}
@@ -44,8 +52,9 @@ func TestRedirectedGet(t *testing.T) {
 	client := InitWebClient().Headers(headers)
 	res, err := client.Get(server.URL)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer assertCloseResponse(t, client, res)
 	if !Is3xxRedirection(res) {
 		t.Fail()
 	}
@@ -63,10 +72,11 @@ func TestClientErrorGet(t *testing.T) {
 	client := InitWebClient().Headers(headers)
 	res, err := client.Get(server.URL)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer assertCloseResponse(t, client, res)
 	if !Is4xxClientError(res) {
-		t.Error(err)
+		t.Fail()
 	}
 }
 
@@ -82,8 +92,9 @@ func TestServerErrorGet(t *testing.T) {
 	client := InitWebClient().Headers(headers)
 	res, err := client.Get(server.URL)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer assertCloseResponse(t, client, res)
 	if !Is5xxServerError(res) {
 		t.Fail()
 	}
@@ -100,8 +111,9 @@ func TestSuccessfulPost(t *testing.T) {
 	client := InitWebClient().Headers(headers)
 	res, err := client.Post(server.URL, []byte{})
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer assertCloseResponse(t, client, res)
 	if !Is2xxSuccessful(res) {
 		t.Fail()
 	}
@@ -118,8 +130,9 @@ func TestSuccessfulPatch(t *testing.T) {
 	client := InitWebClient().Headers(headers)
 	res, err := client.Patch(server.URL, []byte{})
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer assertCloseResponse(t, client, res)
 	if !Is2xxSuccessful(res) {
 		t.Fail()
 	}
@@ -136,8 +149,9 @@ func TestSuccessfulPut(t *testing.T) {
 	client := InitWebClient().Headers(headers)
 	res, err := client.Put(server.URL, []byte{})
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer assertCloseResponse(t, client, res)
 	if !Is2xxSuccessful(res) {
 		t.Fail()
 	}
@@ -154,8 +168,9 @@ func TestSuccessfulDelete(t *testing.T) {
 	client := InitWebClient().Headers(headers)
 	res, err := client.Delete(server.URL)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	defer assertCloseResponse(t, client, res)
 	if !Is2xxSuccessful(res) {
 		t.Fail()
 	}
@@ -333,6 +348,21 @@ func TestClientSetHeaders(t *testing.T) {
 	SetHeaders(&req, map[string]string{"key": "value"})
 	if req.Header.Get("key") != "value" {
 		t.Error("Request has no headers attached")
+	}
+}
+
+func TestSetHeadersWithNilRequest(t *testing.T) {
+	SetHeaders(nil, map[string]string{"key": "value"})
+}
+
+func TestSetHeadersWithNilMap(t *testing.T) {
+	req := &http.Request{
+		Header: map[string][]string{},
+	}
+
+	SetHeaders(req, nil)
+	if req.Header.Get("key") != "" {
+		t.Error("Expected header map to remain unchanged")
 	}
 }
 
