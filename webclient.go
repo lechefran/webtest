@@ -79,7 +79,7 @@ func (w *WebClient) Delete(url string) (*http.Response, error) {
 	return w.execute(req, url)
 }
 
-func (w *WebClient) Headers(m *map[string]string) *WebClient {
+func (w *WebClient) Headers(m map[string]string) *WebClient {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -87,19 +87,15 @@ func (w *WebClient) Headers(m *map[string]string) *WebClient {
 		w.headers = nil
 		return w
 	}
-	w.headers = cloneStringMap(*m)
+	w.headers = cloneStringMap(m)
 	return w
 }
 
-func (w *WebClient) Options(o *WebClientOptions) *WebClient {
+func (w *WebClient) Options(o WebClientOptions) *WebClient {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if o == nil {
-		w.options = WebClientOptions{}
-		return w
-	}
-	w.options = *o
+	w.options = o
 	return w
 }
 
@@ -131,21 +127,33 @@ func (w *WebClient) snapshotConfig() (map[string]string, WebClientOptions) {
 }
 
 func Is2xxSuccessful(r *http.Response) bool {
+	if r == nil {
+		return false
+	}
 	status := r.StatusCode
 	return status >= 200 && status <= 299
 }
 
 func Is3xxRedirection(r *http.Response) bool {
+	if r == nil {
+		return false
+	}
 	status := r.StatusCode
 	return status >= 300 && status <= 399
 }
 
 func Is4xxClientError(r *http.Response) bool {
+	if r == nil {
+		return false
+	}
 	status := r.StatusCode
 	return status >= 400 && status <= 499
 }
 
 func Is5xxServerError(r *http.Response) bool {
+	if r == nil {
+		return false
+	}
 	status := r.StatusCode
 	return status >= 500 && status <= 599
 }

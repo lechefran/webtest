@@ -22,7 +22,7 @@ func TestSuccessfulGet(t *testing.T) {
 
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 	res, err := client.Get(server.URL)
 	if err != nil {
 		t.Error(err)
@@ -41,7 +41,7 @@ func TestRedirectedGet(t *testing.T) {
 
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 	res, err := client.Get(server.URL)
 	if err != nil {
 		t.Error(err)
@@ -60,7 +60,7 @@ func TestClientErrorGet(t *testing.T) {
 
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 	res, err := client.Get(server.URL)
 	if err != nil {
 		t.Error(err)
@@ -79,7 +79,7 @@ func TestServerErrorGet(t *testing.T) {
 
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 	res, err := client.Get(server.URL)
 	if err != nil {
 		t.Error(err)
@@ -97,7 +97,7 @@ func TestSuccessfulPost(t *testing.T) {
 
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 	res, err := client.Post(server.URL, []byte{})
 	if err != nil {
 		t.Error(err)
@@ -115,7 +115,7 @@ func TestSuccessfulPatch(t *testing.T) {
 
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 	res, err := client.Patch(server.URL, []byte{})
 	if err != nil {
 		t.Error(err)
@@ -133,7 +133,7 @@ func TestSuccessfulPut(t *testing.T) {
 
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 	res, err := client.Put(server.URL, []byte{})
 	if err != nil {
 		t.Error(err)
@@ -151,7 +151,7 @@ func TestSuccessfulDelete(t *testing.T) {
 
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 	res, err := client.Delete(server.URL)
 	if err != nil {
 		t.Error(err)
@@ -190,7 +190,7 @@ func TestCloseIdleConnections(t *testing.T) {
 func TestClientHeaders(t *testing.T) {
 	headers := map[string]string{}
 	headers["Content-Type"] = "application/html"
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 
 	if client.headers == nil {
 		t.Error("Initialized client with explicit headers have no headers")
@@ -202,8 +202,8 @@ func TestClientHeaders(t *testing.T) {
 
 func TestOptionsNilNormalizesToDefault(t *testing.T) {
 	client := InitWebClient().
-		Options(&WebClientOptions{WriteToFile: true, FilePath: "./tmp.log"}).
-		Options(nil)
+		Options(WebClientOptions{WriteToFile: true, FilePath: "./tmp.log"}).
+		Options(WebClientOptions{})
 
 	if client.options.WriteToFile {
 		t.Error("expected WriteToFile to default to false")
@@ -223,7 +223,7 @@ func TestHeadersCopiesInputMap(t *testing.T) {
 	defer server.Close()
 
 	headers := map[string]string{"X-Test-Header": "v1"}
-	client := InitWebClient().Headers(&headers)
+	client := InitWebClient().Headers(headers)
 	headers["X-Test-Header"] = "v2"
 
 	res, err := client.Get(server.URL)
@@ -246,7 +246,7 @@ func TestOptionsCopiesInputStruct(t *testing.T) {
 		FilePath:    "./initial.log",
 	}
 	client := InitWebClient()
-	client.Options(&opts)
+	client.Options(opts)
 
 	opts.WriteToFile = false
 	opts.FilePath = "./changed.log"
@@ -301,14 +301,14 @@ func TestConcurrentRequestsWithConfigUpdates(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 400; i++ {
 			if i%2 == 0 {
-				client.Headers(&headersA)
+				client.Headers(headersA)
 			} else {
-				client.Headers(&headersB)
+				client.Headers(headersB)
 			}
 			if i%3 == 0 {
-				client.Options(nil)
+				client.Options(WebClientOptions{})
 			} else {
-				client.Options(&WebClientOptions{WriteToFile: false})
+				client.Options(WebClientOptions{WriteToFile: false})
 			}
 		}
 	}()
@@ -344,6 +344,9 @@ func TestIs2xxSuccessful(t *testing.T) {
 	if !Is2xxSuccessful(&mockRes) {
 		t.Error("Response did not return a 2xx status code")
 	}
+	if Is2xxSuccessful(nil) {
+		t.Error("Nil response should not return a 2xx status code")
+	}
 }
 
 func TestIs3xxRedirection(t *testing.T) {
@@ -353,6 +356,9 @@ func TestIs3xxRedirection(t *testing.T) {
 
 	if !Is3xxRedirection(&mockRes) {
 		t.Error("Response did not return a 3xx status code")
+	}
+	if Is3xxRedirection(nil) {
+		t.Error("Nil response should not return a 3xx status code")
 	}
 }
 
@@ -364,6 +370,9 @@ func TestIs4xxClientError(t *testing.T) {
 	if !Is4xxClientError(&mockRes) {
 		t.Error("Response did not return a 4xx status code")
 	}
+	if Is4xxClientError(nil) {
+		t.Error("Nil response should not return a 4xx status code")
+	}
 }
 
 func TestIs5xxServerError(t *testing.T) {
@@ -373,5 +382,8 @@ func TestIs5xxServerError(t *testing.T) {
 
 	if !Is5xxServerError(&mockRes) {
 		t.Error("Response did not return a 5xx status code")
+	}
+	if Is5xxServerError(nil) {
+		t.Error("Nil response should not return a 5xx status code")
 	}
 }

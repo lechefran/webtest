@@ -28,8 +28,8 @@ func main() {
 
 	client := webtest.
 		InitWebClient().
-		Headers(&headers).
-		Options(&webtest.WebClientOptions{
+		Headers(headers).
+		Options(webtest.WebClientOptions{
 			WriteToFile: true,
 			FilePath:    "./log/requests.log",
 		})
@@ -67,8 +67,8 @@ func main() {
 
 	client := webtest.
 		InitWebClient().
-		Headers(&headers).
-		Options(&webtest.WebClientOptions{
+		Headers(headers).
+		Options(webtest.WebClientOptions{
 			WriteToFile: true,
 			FilePath:    "./log/request-results.txt",
 		})
@@ -122,6 +122,7 @@ The package now follows direct Go-style error returns:
 - `AddQueryParams` returns `(string, error)`
 - `CloseResponse` returns `error`
 - file write/close failures are returned as errors (not process exits)
+- `Headers(...)` and `Options(...)` now take values (not pointers) and copy the provided config.
 
 ## Breaking Changes
 
@@ -131,10 +132,12 @@ If you are upgrading from an older version:
 2. `ReadCsv(path)` changed from `[][]string` to `([][]string, error)`.
 3. `AddQueryParams(...)` changed from `string` to `(string, error)`.
 4. `CloseResponse(...)` changed from no return value to `error`.
+5. `Headers(...)` changed from `*map[string]string` to `map[string]string`.
+6. `Options(...)` changed from `*WebClientOptions` to `WebClientOptions`.
 
 ## Notes
 
-- `Options(nil)` is valid and resets to default options.
+- `Options(WebClientOptions{})` resets to default options.
 - If `WriteToFile` is true and `FilePath` is empty, a timestamp-based log file is created in the current directory.
 - The console output colors requests by status class (2xx green, 3xx yellow, others red).
 - Idle connections are kept for pooling by default; call `client.CloseIdleConnections()` when you want to explicitly flush the pool.
