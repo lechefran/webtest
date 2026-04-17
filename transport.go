@@ -20,11 +20,19 @@ func InitTransport() *Transport {
 		},
 	}
 
-	t.rtp = &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		DialContext:         t.dialContext,
-		TLSHandshakeTimeout: 10 * time.Second,
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.rtp = &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			DialContext:         t.dialContext,
+			TLSHandshakeTimeout: 10 * time.Second,
+		}
+		return t
 	}
+
+	clonedTransport := defaultTransport.Clone()
+	clonedTransport.DialContext = t.dialContext
+	t.rtp = clonedTransport
 
 	return t
 }

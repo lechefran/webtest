@@ -18,17 +18,19 @@ import (
 )
 
 type WebClient struct {
-	mu        sync.RWMutex
-	client    http.Client
-	headers   map[string]string
-	transport *Transport
-	options   WebClientOptions
+	mu                   sync.RWMutex
+	client               http.Client
+	headers              map[string]string
+	transport            *Transport
+	options              WebClientOptions
+	generatedLogFilePath string
 }
 
 const (
 	logPrefixHeaders  = "[HEADERS] "
 	logPrefixRequest  = "[REQUEST] "
 	logPrefixResponse = "[RESPONSE] "
+	defaultRequestTimeout = 30 * time.Second
 )
 
 func InitWebClient() *WebClient {
@@ -105,6 +107,15 @@ func (w *WebClient) Options(o WebClientOptions) *WebClient {
 	defer w.mu.Unlock()
 
 	w.options = o
+	w.generatedLogFilePath = ""
+	return w
+}
+
+func (w *WebClient) ClearGeneratedLogFilePath() *WebClient {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.generatedLogFilePath = ""
 	return w
 }
 
@@ -250,6 +261,13 @@ func shouldPrepareResponseBodyForLog(opts WebClientOptions) bool {
 	return opts.WriteToFile && (opts.WriteResponse || opts.LogMetadata)
 }
 
+func effectiveRequestTimeout(opts WebClientOptions) time.Duration {
+	if opts.RequestTimeout > 0 {
+		return opts.RequestTimeout
+	}
+	return defaultRequestTimeout
+}
+
 func prepareRequestPayloadForLog(req *http.Request, opts WebClientOptions) (bodyLogPayload, error) {
 	if !shouldPrepareRequestBodyForLog(opts) {
 		return bodyLogPayload{}, nil
@@ -292,9 +310,12 @@ func buildCallSummary(
 	opts WebClientOptions,
 	requestBytes int,
 	responseBytes int,
+	requestErr error,
 ) string {
 	var summary string
-	if res != nil {
+	if requestErr != nil {
+		summary = req.Method + " " + requestURL + " ERROR total=" + fmt.Sprintf("%.3fs", timing.totalDuration.Seconds())
+	} else if res != nil {
 		summary = req.Method + " " + requestURL + " " + res.Status + " total=" + fmt.Sprintf("%.3fs", timing.totalDuration.Seconds())
 	} else {
 		summary = req.Method + " " + requestURL + " ERROR total=" + fmt.Sprintf("%.3fs", timing.totalDuration.Seconds())
@@ -313,8 +334,8 @@ func buildCallSummary(
 	return summary
 }
 
-func printCallSummary(summary string, res *http.Response) {
-	if res == nil {
+func printCallSummary(summary string, res *http.Response, requestErr error) {
+	if requestErr != nil || res == nil {
 		color.HiRed(summary)
 		return
 	}
@@ -330,17 +351,23 @@ func printCallSummary(summary string, res *http.Response) {
 	color.HiRed(summary)
 }
 
-func resolveLogFilePath(opts WebClientOptions) string {
+func (w *WebClient) resolveLogFilePath(opts WebClientOptions) string {
 	if opts.FilePath != "" {
 		return opts.FilePath
 	}
 
-	fileName := defaultLogFilePath(time.Now())
-	color.HiBlue("Application logs will be saved to ", fileName)
-	return fileName
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.generatedLogFilePath == "" {
+		w.generatedLogFilePath = defaultLogFilePath(time.Now())
+		color.HiBlue("Application logs will be saved to ", w.generatedLogFilePath)
+	}
+
+	return w.generatedLogFilePath
 }
 
-func writeRequestLogs(
+func (w *WebClient) writeRequestLogs(
 	opts WebClientOptions,
 	req *http.Request,
 	callSummary string,
@@ -351,7 +378,7 @@ func writeRequestLogs(
 		return nil
 	}
 
-	fileName := resolveLogFilePath(opts)
+	fileName := w.resolveLogFilePath(opts)
 	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -391,7 +418,7 @@ func writeRequestLogs(
 	return CloseFile(f)
 }
 
-func (w *WebClient) doRequestWithTiming(req *http.Request) (*http.Response, requestTiming, error) {
+func (w *WebClient) doRequestWithTiming(req *http.Request, timeout time.Duration) (*http.Response, requestTiming, error) {
 	start := time.Now()
 	var connStart time.Time
 	var connDuration time.Duration
@@ -414,7 +441,9 @@ func (w *WebClient) doRequestWithTiming(req *http.Request) (*http.Response, requ
 	}
 
 	tracedReq := req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-	res, err := w.client.Do(tracedReq)
+	client := w.client
+	client.Timeout = timeout
+	res, err := client.Do(tracedReq)
 	timing := requestTiming{
 		totalDuration: time.Since(start),
 		connDuration:  connDuration,
@@ -478,8 +507,14 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		return nil, err
 	}
 
-	res, timing, err := w.doRequestWithTiming(req)
+	res, timing, err := w.doRequestWithTiming(req, effectiveRequestTimeout(opts))
 	if err != nil {
+		summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, 0, err)
+		printCallSummary(summary, res, err)
+		logErr := w.writeRequestLogs(opts, req, summary, requestPayload, bodyLogPayload{})
+		if logErr != nil {
+			return res, errors.Join(err, logErr)
+		}
 		return res, err
 	}
 
@@ -488,10 +523,10 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		return res, err
 	}
 
-	summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, responsePayload.bytes)
-	printCallSummary(summary, res)
+	summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, responsePayload.bytes, nil)
+	printCallSummary(summary, res, nil)
 
-	if err := writeRequestLogs(opts, req, summary, requestPayload, responsePayload); err != nil {
+	if err := w.writeRequestLogs(opts, req, summary, requestPayload, responsePayload); err != nil {
 		return res, err
 	}
 
