@@ -45,3 +45,29 @@ func TestInitTransportUsesDialContext(t *testing.T) {
 		t.Fatal("expected DialContext to be configured")
 	}
 }
+
+func TestInitTransportPreservesDefaultTransportSettings(t *testing.T) {
+	transport := InitTransport()
+	httpTransport, ok := transport.rtp.(*http.Transport)
+	if !ok {
+		t.Fatal("expected transport.rtp to be *http.Transport")
+	}
+
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.Fatal("expected http.DefaultTransport to be *http.Transport")
+	}
+
+	if httpTransport == defaultTransport {
+		t.Fatal("expected InitTransport to clone the default transport")
+	}
+	if httpTransport.ForceAttemptHTTP2 != defaultTransport.ForceAttemptHTTP2 {
+		t.Fatal("expected ForceAttemptHTTP2 to match the default transport")
+	}
+	if httpTransport.MaxIdleConns != defaultTransport.MaxIdleConns {
+		t.Fatal("expected MaxIdleConns to match the default transport")
+	}
+	if httpTransport.IdleConnTimeout != defaultTransport.IdleConnTimeout {
+		t.Fatal("expected IdleConnTimeout to match the default transport")
+	}
+}
