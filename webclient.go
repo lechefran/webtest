@@ -18,11 +18,12 @@ import (
 )
 
 type WebClient struct {
-	mu        sync.RWMutex
-	client    http.Client
-	headers   map[string]string
-	transport *Transport
-	options   WebClientOptions
+	mu                   sync.RWMutex
+	client               http.Client
+	headers              map[string]string
+	transport            *Transport
+	options              WebClientOptions
+	generatedLogFilePath string
 }
 
 const (
@@ -106,6 +107,15 @@ func (w *WebClient) Options(o WebClientOptions) *WebClient {
 	defer w.mu.Unlock()
 
 	w.options = o
+	w.generatedLogFilePath = ""
+	return w
+}
+
+func (w *WebClient) ClearGeneratedLogFilePath() *WebClient {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.generatedLogFilePath = ""
 	return w
 }
 
@@ -341,17 +351,23 @@ func printCallSummary(summary string, res *http.Response, requestErr error) {
 	color.HiRed(summary)
 }
 
-func resolveLogFilePath(opts WebClientOptions) string {
+func (w *WebClient) resolveLogFilePath(opts WebClientOptions) string {
 	if opts.FilePath != "" {
 		return opts.FilePath
 	}
 
-	fileName := defaultLogFilePath(time.Now())
-	color.HiBlue("Application logs will be saved to ", fileName)
-	return fileName
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.generatedLogFilePath == "" {
+		w.generatedLogFilePath = defaultLogFilePath(time.Now())
+		color.HiBlue("Application logs will be saved to ", w.generatedLogFilePath)
+	}
+
+	return w.generatedLogFilePath
 }
 
-func writeRequestLogs(
+func (w *WebClient) writeRequestLogs(
 	opts WebClientOptions,
 	req *http.Request,
 	callSummary string,
@@ -362,7 +378,7 @@ func writeRequestLogs(
 		return nil
 	}
 
-	fileName := resolveLogFilePath(opts)
+	fileName := w.resolveLogFilePath(opts)
 	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -495,7 +511,7 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 	if err != nil {
 		summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, 0, err)
 		printCallSummary(summary, res, err)
-		logErr := writeRequestLogs(opts, req, summary, requestPayload, bodyLogPayload{})
+		logErr := w.writeRequestLogs(opts, req, summary, requestPayload, bodyLogPayload{})
 		if logErr != nil {
 			return res, errors.Join(err, logErr)
 		}
@@ -510,7 +526,7 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 	summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, responsePayload.bytes, nil)
 	printCallSummary(summary, res, nil)
 
-	if err := writeRequestLogs(opts, req, summary, requestPayload, responsePayload); err != nil {
+	if err := w.writeRequestLogs(opts, req, summary, requestPayload, responsePayload); err != nil {
 		return res, err
 	}
 
