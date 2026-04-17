@@ -243,11 +243,11 @@ type requestTiming struct {
 }
 
 func shouldPrepareRequestBodyForLog(opts WebClientOptions) bool {
-	return opts.WriteToFile && (opts.WriteSettings.writeRequest || opts.WriteSettings.logMetadata)
+	return opts.WriteToFile && (opts.WriteRequest || opts.LogMetadata)
 }
 
 func shouldPrepareResponseBodyForLog(opts WebClientOptions) bool {
-	return opts.WriteToFile && (opts.WriteSettings.writeResponse || opts.WriteSettings.logMetadata)
+	return opts.WriteToFile && (opts.WriteResponse || opts.LogMetadata)
 }
 
 func prepareRequestPayloadForLog(req *http.Request, opts WebClientOptions) (bodyLogPayload, error) {
@@ -306,7 +306,7 @@ func buildCallSummary(
 		summary += " connect=" + fmt.Sprintf("%.3fs", timing.connDuration.Seconds())
 	}
 
-	if opts.WriteSettings.logMetadata {
+	if opts.LogMetadata {
 		summary += " sent=" + formatByteSize(requestBytes) + " received=" + formatByteSize(responseBytes)
 	}
 
@@ -362,7 +362,7 @@ func writeRequestLogs(
 		return err
 	}
 
-	if opts.WriteSettings.writeHeaders {
+	if opts.WriteHeaders {
 		headerLine, err := formatRequestHeadersForLog(req.Header)
 		if err != nil {
 			_ = CloseFile(f)
@@ -374,14 +374,14 @@ func writeRequestLogs(
 		}
 	}
 
-	if opts.WriteSettings.writeRequest && requestPayload.hasLine {
+	if opts.WriteRequest && requestPayload.hasLine {
 		if err := WriteToFile(f, []byte(logPrefixRequest+requestPayload.line)); err != nil {
 			_ = CloseFile(f)
 			return err
 		}
 	}
 
-	if opts.WriteSettings.writeResponse && responsePayload.hasLine {
+	if opts.WriteResponse && responsePayload.hasLine {
 		if err := WriteToFile(f, []byte(logPrefixResponse+responsePayload.line)); err != nil {
 			_ = CloseFile(f)
 			return err

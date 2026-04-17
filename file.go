@@ -7,19 +7,6 @@ import (
 	"os"
 )
 
-type WriteSettings struct {
-	writeHeaders, writeRequest, writeResponse, logMetadata bool
-}
-
-func InitDefaultFileSettings() *WriteSettings {
-	return &WriteSettings{
-		writeHeaders:  false,
-		writeRequest:  false,
-		writeResponse: false,
-		logMetadata: false,
-	}
-}
-
 func FormatStringArray(buf *bytes.Buffer, arr []string, delimiter string) *bytes.Buffer {
 	buf.WriteString("[")
 	for i := range arr {

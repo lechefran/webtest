@@ -263,20 +263,31 @@ func TestHeadersCopiesInputMap(t *testing.T) {
 
 func TestOptionsCopiesInputStruct(t *testing.T) {
 	opts := WebClientOptions{
-		WriteToFile: true,
-		FilePath:    "./initial.log",
+		WriteToFile:   true,
+		FilePath:      "./initial.log",
+		WriteHeaders:  true,
+		WriteRequest:  true,
+		WriteResponse: true,
+		LogMetadata:   true,
 	}
 	client := InitWebClient()
 	client.Options(opts)
 
 	opts.WriteToFile = false
 	opts.FilePath = "./changed.log"
+	opts.WriteHeaders = false
+	opts.WriteRequest = false
+	opts.WriteResponse = false
+	opts.LogMetadata = false
 
 	if !client.options.WriteToFile {
 		t.Fatal("expected options to be copied on set")
 	}
 	if client.options.FilePath != "./initial.log" {
 		t.Fatalf("expected copied file path ./initial.log, got %q", client.options.FilePath)
+	}
+	if !client.options.WriteHeaders || !client.options.WriteRequest || !client.options.WriteResponse || !client.options.LogMetadata {
+		t.Fatal("expected logging flags to be copied on set")
 	}
 }
 
@@ -300,11 +311,9 @@ func TestWriteHeadersToFileWhenEnabled(t *testing.T) {
 		"X-Test":       "abc123",
 	}
 	opts := WebClientOptions{
-		WriteToFile: true,
-		FilePath:    tmpPath,
-		WriteSettings: WriteSettings{
-			writeHeaders: true,
-		},
+		WriteToFile:  true,
+		FilePath:     tmpPath,
+		WriteHeaders: true,
 	}
 
 	client := InitWebClient().Headers(headers).Options(opts)
@@ -361,11 +370,9 @@ func TestWriteRequestToFileWhenEnabled(t *testing.T) {
 	}
 
 	opts := WebClientOptions{
-		WriteToFile: true,
-		FilePath:    tmpPath,
-		WriteSettings: WriteSettings{
-			writeRequest: true,
-		},
+		WriteToFile:  true,
+		FilePath:     tmpPath,
+		WriteRequest: true,
 	}
 
 	client := InitWebClient().Options(opts)
@@ -423,11 +430,9 @@ func TestWriteResponseToFileWhenEnabled(t *testing.T) {
 	}
 
 	opts := WebClientOptions{
-		WriteToFile: true,
-		FilePath:    tmpPath,
-		WriteSettings: WriteSettings{
-			writeResponse: true,
-		},
+		WriteToFile:   true,
+		FilePath:      tmpPath,
+		WriteResponse: true,
 	}
 
 	client := InitWebClient().Options(opts)
@@ -493,9 +498,7 @@ func TestWriteMetadataToFileWhenEnabled(t *testing.T) {
 	opts := WebClientOptions{
 		WriteToFile: true,
 		FilePath:    tmpPath,
-		WriteSettings: WriteSettings{
-			logMetadata: true,
-		},
+		LogMetadata: true,
 	}
 
 	client := InitWebClient().Options(opts)
