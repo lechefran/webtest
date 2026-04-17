@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/http/httptrace"
@@ -23,6 +24,11 @@ type WebClient struct {
 	transport *Transport
 	options   WebClientOptions
 }
+
+const (
+	logPrefixHeaders = "[HEADERS] "
+	logPrefixRequest = "[REQUEST] "
+)
 
 func InitWebClient() *WebClient {
 	t := InitTransport()
@@ -134,6 +140,55 @@ func formatRequestHeadersForLog(headers http.Header) (string, error) {
 	return string(body), nil
 }
 
+func formatRequestBodyForLog(body []byte) (string, error) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return "{}", nil
+	}
+	if json.Valid(trimmed) {
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, trimmed); err != nil {
+			return "", err
+		}
+		return compact.String(), nil
+	}
+
+	serialized, err := json.Marshal(map[string]string{"raw": string(body)})
+	if err != nil {
+		return "", err
+	}
+	return string(serialized), nil
+}
+
+func prepareRequestBodyForLog(req *http.Request) (string, bool, error) {
+	if req == nil || req.Body == nil || req.Body == http.NoBody {
+		return "", false, nil
+	}
+
+	bodyBytes, err := io.ReadAll(req.Body)
+	if err != nil {
+		return "", false, err
+	}
+	if err := req.Body.Close(); err != nil {
+		return "", false, err
+	}
+
+	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+	}
+
+	if len(bytes.TrimSpace(bodyBytes)) == 0 {
+		return "", false, nil
+	}
+
+	bodyLine, err := formatRequestBodyForLog(bodyBytes)
+	if err != nil {
+		return "", false, err
+	}
+	return bodyLine, true, nil
+}
+
 func (w *WebClient) snapshotConfig() (map[string]string, WebClientOptions) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -181,6 +236,16 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 
 	if headers != nil {
 		SetHeaders(req, headers)
+	}
+
+	var requestBodyLine string
+	hasRequestBodyLine := false
+	if opts.WriteToFile && opts.WriteSettings.writeRequest {
+		var prepareErr error
+		requestBodyLine, hasRequestBodyLine, prepareErr = prepareRequestBodyForLog(req)
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
 	}
 
 	start := time.Now()
@@ -252,16 +317,23 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 				_ = CloseFile(f)
 				return res, writeErr
 			}
-			if opts.WriteSettings.writeHeader {
+			if opts.WriteSettings.writeHeaders {
 				headerLine, headerFormatErr := formatRequestHeadersForLog(req.Header)
 				if headerFormatErr != nil {
 					_ = CloseFile(f)
 					return res, headerFormatErr
 				}
-				headerErr := WriteToFile(f, []byte(headerLine))
+				headerErr := WriteToFile(f, []byte(logPrefixHeaders+headerLine))
 				if headerErr != nil {
 					_ = CloseFile(f)
 					return res, headerErr
+				}
+			}
+			if opts.WriteSettings.writeRequest && hasRequestBodyLine {
+				bodyErr := WriteToFile(f, []byte(logPrefixRequest+requestBodyLine))
+				if bodyErr != nil {
+					_ = CloseFile(f)
+					return res, bodyErr
 				}
 			}
 			closeErr := CloseFile(f)

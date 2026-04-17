@@ -8,13 +8,13 @@ import (
 )
 
 type WriteSettings struct {
-	writeCall, writeHeader, writeRequest, writeResponse, writeMetadata bool
+	writeCall, writeHeaders, writeRequest, writeResponse, writeMetadata bool
 }
 
 func InitDefaultFileSettings() *WriteSettings {
 	return &WriteSettings{
 		writeCall:     true,
-		writeHeader:   false,
+		writeHeaders:  false,
 		writeRequest:  false,
 		writeResponse: false,
 		writeMetadata: false,

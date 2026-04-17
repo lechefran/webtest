@@ -1,7 +1,9 @@
 package webtest
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -301,7 +303,7 @@ func TestWriteHeadersToFileWhenEnabled(t *testing.T) {
 		WriteToFile: true,
 		FilePath:    tmpPath,
 		WriteSettings: WriteSettings{
-			writeHeader: true,
+			writeHeaders: true,
 		},
 	}
 
@@ -321,9 +323,13 @@ func TestWriteHeadersToFileWhenEnabled(t *testing.T) {
 	if len(lines) < 2 {
 		t.Fatalf("expected at least 2 log lines (call + headers), got %d", len(lines))
 	}
+	if !strings.HasPrefix(lines[1], logPrefixHeaders) {
+		t.Fatalf("expected headers line prefix %q, got %q", logPrefixHeaders, lines[1])
+	}
 
 	var headersJSON map[string][]string
-	if err := json.Unmarshal([]byte(lines[1]), &headersJSON); err != nil {
+	headersPayload := strings.TrimPrefix(lines[1], logPrefixHeaders)
+	if err := json.Unmarshal([]byte(headersPayload), &headersJSON); err != nil {
 		t.Fatalf("expected valid json headers line, got %q: %v", lines[1], err)
 	}
 	if len(headersJSON["Content-Type"]) == 0 || headersJSON["Content-Type"][0] != "application/json" {
@@ -331,6 +337,72 @@ func TestWriteHeadersToFileWhenEnabled(t *testing.T) {
 	}
 	if len(headersJSON["X-Test"]) == 0 || headersJSON["X-Test"][0] != "abc123" {
 		t.Fatalf("expected X-Test header in json log output, got: %#v", headersJSON)
+	}
+}
+
+func TestWriteRequestToFileWhenEnabled(t *testing.T) {
+	requestBody := []byte(`{"query":"pizza","limit":5}`)
+	bodyCh := make(chan []byte, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodyCh <- b
+		_ = r.Body.Close()
+		_, _ = w.Write([]byte("Hello, World!"))
+	}))
+	defer server.Close()
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "webtest-request-*.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := WebClientOptions{
+		WriteToFile: true,
+		FilePath:    tmpPath,
+		WriteSettings: WriteSettings{
+			writeRequest: true,
+		},
+	}
+
+	client := InitWebClient().Options(opts)
+	res, err := client.Post(server.URL, requestBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCloseResponse(t, client, res)
+
+	serverBody := <-bodyCh
+	if !bytes.Equal(serverBody, requestBody) {
+		t.Fatalf("expected server to receive body %q, got %q", string(requestBody), string(serverBody))
+	}
+
+	content, err := os.ReadFile(tmpPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 log lines (call + request body), got %d", len(lines))
+	}
+	if !strings.HasPrefix(lines[1], logPrefixRequest) {
+		t.Fatalf("expected request line prefix %q, got %q", logPrefixRequest, lines[1])
+	}
+
+	var requestJSON map[string]interface{}
+	requestPayload := strings.TrimPrefix(lines[1], logPrefixRequest)
+	if err := json.Unmarshal([]byte(requestPayload), &requestJSON); err != nil {
+		t.Fatalf("expected valid json request body line, got %q: %v", lines[1], err)
+	}
+	if requestJSON["query"] != "pizza" {
+		t.Fatalf("expected request query in json log output, got: %#v", requestJSON)
+	}
+	if requestJSON["limit"] != float64(5) {
+		t.Fatalf("expected request limit in json log output, got: %#v", requestJSON)
 	}
 }
 
