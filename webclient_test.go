@@ -2,6 +2,7 @@ package webtest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -276,6 +277,7 @@ func TestOptionsCopiesInputStruct(t *testing.T) {
 		WriteRequest:  true,
 		WriteResponse: true,
 		LogMetadata:   true,
+		RequestTimeout: 15 * time.Second,
 	}
 	client := InitWebClient()
 	client.Options(opts)
@@ -286,6 +288,7 @@ func TestOptionsCopiesInputStruct(t *testing.T) {
 	opts.WriteRequest = false
 	opts.WriteResponse = false
 	opts.LogMetadata = false
+	opts.RequestTimeout = 0
 
 	if !client.options.WriteToFile {
 		t.Fatal("expected options to be copied on set")
@@ -295,6 +298,9 @@ func TestOptionsCopiesInputStruct(t *testing.T) {
 	}
 	if !client.options.WriteHeaders || !client.options.WriteRequest || !client.options.WriteResponse || !client.options.LogMetadata {
 		t.Fatal("expected logging flags to be copied on set")
+	}
+	if client.options.RequestTimeout != 15*time.Second {
+		t.Fatalf("expected request timeout to be copied on set, got %s", client.options.RequestTimeout)
 	}
 }
 
@@ -589,6 +595,26 @@ func TestRequestErrorIsLoggedToFileWhenEnabled(t *testing.T) {
 	}
 	if !strings.Contains(lines[0], " ERROR total=") {
 		t.Fatalf("expected error call line in log output, got %q", lines[0])
+	}
+}
+
+func TestRequestTimeoutIsEnforced(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		_, _ = w.Write([]byte("Hello, World!"))
+	}))
+	defer server.Close()
+
+	client := InitWebClient().Options(WebClientOptions{
+		RequestTimeout: 20 * time.Millisecond,
+	})
+
+	_, err := client.Get(server.URL)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !os.IsTimeout(err) {
+		t.Fatalf("expected timeout-related error, got %v", err)
 	}
 }
 

@@ -1,5 +1,7 @@
 package webtest
 
+import "time"
+
 // WebClientOptions
 /*
 WebClientOptions allows the customization of behavior for a
@@ -11,6 +13,12 @@ configuration.
 		If WriteToFile is set to true, but no FilePath value is explicitly assigned,
 		the WebClient will create a file with the naming format ./YYYYMMDDThhmmssZ.log
 		using a Windows-safe UTC timestamp format.
+	- WriteHeaders appends the request headers to the log file as a JSON line.
+	- WriteRequest appends the request body to the log file as a JSON line.
+	- WriteResponse appends the response body to the log file as a JSON line.
+	- LogMetadata appends sent and received byte counts to the main call summary line.
+	- RequestTimeout sets the end-to-end timeout for the request. If unset, the
+		client uses the package default timeout.
 */
 type WebClientOptions struct {
 	WriteToFile   bool   `json:"writeToFile"`
@@ -19,4 +27,5 @@ type WebClientOptions struct {
 	WriteRequest  bool   `json:"writeRequest"`
 	WriteResponse bool   `json:"writeResponse"`
 	LogMetadata   bool   `json:"logMetadata"`
+	RequestTimeout time.Duration `json:"requestTimeout"`
 }

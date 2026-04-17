@@ -114,6 +114,7 @@ type WebClientOptions struct {
 	WriteRequest  bool   // append request body as a JSON log line
 	WriteResponse bool   // append response body as a JSON log line
 	LogMetadata   bool   // append sent/received sizes to the call line
+	RequestTimeout time.Duration // total request timeout; defaults to 30s when unset
 }
 ```
 
@@ -144,6 +145,7 @@ If you are upgrading from an older version:
 ## Notes
 
 - `Options(WebClientOptions{})` resets to default options.
+- Requests use a 30 second end-to-end timeout by default. Set `RequestTimeout` to override it.
 - If `WriteToFile` is true and `FilePath` is empty, a Windows-safe UTC timestamp log file is created in the current directory.
 - The console output colors requests by status class (2xx green, 3xx yellow, others red).
 - Idle connections are kept for pooling by default; call `client.CloseIdleConnections()` when you want to explicitly flush the pool.

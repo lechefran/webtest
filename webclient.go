@@ -29,6 +29,7 @@ const (
 	logPrefixHeaders  = "[HEADERS] "
 	logPrefixRequest  = "[REQUEST] "
 	logPrefixResponse = "[RESPONSE] "
+	defaultRequestTimeout = 30 * time.Second
 )
 
 func InitWebClient() *WebClient {
@@ -250,6 +251,13 @@ func shouldPrepareResponseBodyForLog(opts WebClientOptions) bool {
 	return opts.WriteToFile && (opts.WriteResponse || opts.LogMetadata)
 }
 
+func effectiveRequestTimeout(opts WebClientOptions) time.Duration {
+	if opts.RequestTimeout > 0 {
+		return opts.RequestTimeout
+	}
+	return defaultRequestTimeout
+}
+
 func prepareRequestPayloadForLog(req *http.Request, opts WebClientOptions) (bodyLogPayload, error) {
 	if !shouldPrepareRequestBodyForLog(opts) {
 		return bodyLogPayload{}, nil
@@ -394,7 +402,7 @@ func writeRequestLogs(
 	return CloseFile(f)
 }
 
-func (w *WebClient) doRequestWithTiming(req *http.Request) (*http.Response, requestTiming, error) {
+func (w *WebClient) doRequestWithTiming(req *http.Request, timeout time.Duration) (*http.Response, requestTiming, error) {
 	start := time.Now()
 	var connStart time.Time
 	var connDuration time.Duration
@@ -417,7 +425,9 @@ func (w *WebClient) doRequestWithTiming(req *http.Request) (*http.Response, requ
 	}
 
 	tracedReq := req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-	res, err := w.client.Do(tracedReq)
+	client := w.client
+	client.Timeout = timeout
+	res, err := client.Do(tracedReq)
 	timing := requestTiming{
 		totalDuration: time.Since(start),
 		connDuration:  connDuration,
@@ -481,7 +491,7 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		return nil, err
 	}
 
-	res, timing, err := w.doRequestWithTiming(req)
+	res, timing, err := w.doRequestWithTiming(req, effectiveRequestTimeout(opts))
 	if err != nil {
 		summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, 0, err)
 		printCallSummary(summary, res, err)
