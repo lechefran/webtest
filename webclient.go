@@ -292,9 +292,12 @@ func buildCallSummary(
 	opts WebClientOptions,
 	requestBytes int,
 	responseBytes int,
+	requestErr error,
 ) string {
 	var summary string
-	if res != nil {
+	if requestErr != nil {
+		summary = req.Method + " " + requestURL + " ERROR total=" + fmt.Sprintf("%.3fs", timing.totalDuration.Seconds())
+	} else if res != nil {
 		summary = req.Method + " " + requestURL + " " + res.Status + " total=" + fmt.Sprintf("%.3fs", timing.totalDuration.Seconds())
 	} else {
 		summary = req.Method + " " + requestURL + " ERROR total=" + fmt.Sprintf("%.3fs", timing.totalDuration.Seconds())
@@ -313,8 +316,8 @@ func buildCallSummary(
 	return summary
 }
 
-func printCallSummary(summary string, res *http.Response) {
-	if res == nil {
+func printCallSummary(summary string, res *http.Response, requestErr error) {
+	if requestErr != nil || res == nil {
 		color.HiRed(summary)
 		return
 	}
@@ -480,6 +483,12 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 
 	res, timing, err := w.doRequestWithTiming(req)
 	if err != nil {
+		summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, 0, err)
+		printCallSummary(summary, res, err)
+		logErr := writeRequestLogs(opts, req, summary, requestPayload, bodyLogPayload{})
+		if logErr != nil {
+			return res, errors.Join(err, logErr)
+		}
 		return res, err
 	}
 
@@ -488,8 +497,8 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		return res, err
 	}
 
-	summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, responsePayload.bytes)
-	printCallSummary(summary, res)
+	summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, responsePayload.bytes, nil)
+	printCallSummary(summary, res, nil)
 
 	if err := writeRequestLogs(opts, req, summary, requestPayload, responsePayload); err != nil {
 		return res, err

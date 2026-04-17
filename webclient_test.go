@@ -3,6 +3,7 @@ package webtest
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,12 @@ import (
 	"testing"
 	"time"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
 
 func TestInitWebClient(t *testing.T) {
 	client := InitWebClient()
@@ -543,6 +550,45 @@ func TestWriteMetadataToFileWhenEnabled(t *testing.T) {
 	}
 	if receivedIdx < sentIdx {
 		t.Fatalf("expected received metadata to appear after sent metadata, got %q", callLine)
+	}
+}
+
+func TestRequestErrorIsLoggedToFileWhenEnabled(t *testing.T) {
+	tmpFile, err := os.CreateTemp(t.TempDir(), "webtest-request-error-*.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := WebClientOptions{
+		WriteToFile: true,
+		FilePath:    tmpPath,
+	}
+
+	client := InitWebClient().Options(opts)
+	client.client.Transport = roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+		return nil, errors.New("forced transport failure")
+	})
+
+	_, err = client.Get("http://example.com")
+	if err == nil {
+		t.Fatal("expected request error")
+	}
+
+	content, err := os.ReadFile(tmpPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	if len(lines) < 1 {
+		t.Fatalf("expected at least 1 log line (error call line), got %d", len(lines))
+	}
+	if !strings.Contains(lines[0], " ERROR total=") {
+		t.Fatalf("expected error call line in log output, got %q", lines[0])
 	}
 }
 
