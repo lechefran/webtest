@@ -1,38 +1,66 @@
 package webtest
 
 import (
+	"bytes"
 	"encoding/csv"
-	"log"
+	"errors"
 	"os"
-	"strings"
-	"time"
 )
 
-func ReadCsv(path string) [][]string {
-	f, err := os.Open(path)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defer f.Close()
-	res, err := csv.NewReader(f).ReadAll()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return res
-}
-
-func DumpResponse(res [][]byte, path string) {
-	filepath := strings.ReplaceAll(path+"/results-"+time.Now().Format(time.RFC3339)+".csv", " ", "-")
-	f, err := os.Create(filepath)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, r := range res {
-		if _, err := f.Write(r); err != nil {
-			panic(err)
+func FormatStringArray(buf *bytes.Buffer, arr []string, delimiter string) *bytes.Buffer {
+	buf.WriteString("[")
+	for i := range arr {
+		if i != len(arr)-1 {
+			buf.WriteString("\"" + arr[i] + "\"" + delimiter + " ")
+		} else {
+			buf.WriteString("\"" + arr[i] + "\"")
 		}
 	}
+	buf.WriteString("]")
+	return buf
+}
+
+func ReadCsv(path string) (records [][]string, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		closeErr := CloseFile(f)
+		if closeErr == nil {
+			return
+		}
+		if err == nil {
+			err = closeErr
+			return
+		}
+		err = errors.Join(err, closeErr)
+	}()
+
+	records, err = csv.NewReader(f).ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func WriteToFile(f *os.File, b []byte) error {
+	if _, err := f.Write(b); err != nil {
+		return err
+	}
+	if _, err := f.Write([]byte{'\n'}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func CloseFile(file *os.File) error {
+	if file == nil {
+		return nil
+	}
+
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return nil
 }
