@@ -138,6 +138,8 @@ If you are upgrading from an older version:
 4. `CloseResponse(...)` changed from no return value to `error`.
 5. `Headers(...)` changed from `*map[string]string` to `map[string]string`.
 6. `Options(...)` changed from `*WebClientOptions` to `WebClientOptions`.
+7. Logging options were flattened into `WebClientOptions`; the nested `WriteSettings` type was removed.
+8. Nested logging fields such as `WriteSettings.writeHeaders`, `WriteSettings.writeRequest`, `WriteSettings.writeResponse`, and `WriteSettings.logMetadata` are now configured as `WriteHeaders`, `WriteRequest`, `WriteResponse`, and `LogMetadata` directly on `WebClientOptions`.
 
 ## Notes
 
@@ -145,6 +147,16 @@ If you are upgrading from an older version:
 - If `WriteToFile` is true and `FilePath` is empty, a Windows-safe UTC timestamp log file is created in the current directory.
 - The console output colors requests by status class (2xx green, 3xx yellow, others red).
 - Idle connections are kept for pooling by default; call `client.CloseIdleConnections()` when you want to explicitly flush the pool.
+
+## Logging Disclaimer
+
+`WriteRequest`, `WriteResponse`, and `LogMetadata` may require the library to fully read request or response bodies into memory in order to format or measure them for logging.
+
+- Large payloads can increase memory usage.
+- Streaming-style request or response handling may no longer behave like a pure pass-through flow when these options are enabled.
+- Response logging and metadata collection may force the full body to be read before the caller consumes it.
+
+These logging features are intentionally left available for benchmarking and diagnostics. Consumers should enable them selectively based on their own payload sizes, runtime limits, and streaming requirements.
 
 ## Timing Output
 
