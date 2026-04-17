@@ -7,16 +7,17 @@ import (
 	"os"
 )
 
-type FileSettings struct {
-	writeCall, writeHeader, writeRequest, writeResponse bool
+type WriteSettings struct {
+	writeCall, writeHeader, writeRequest, writeResponse, writeMetadata bool
 }
 
-func InitDefaultFileSettings() *FileSettings {
-	return &FileSettings{
+func InitDefaultFileSettings() *WriteSettings {
+	return &WriteSettings{
 		writeCall:     true,
 		writeHeader:   false,
 		writeRequest:  false,
 		writeResponse: false,
+		writeMetadata: false,
 	}
 }
 

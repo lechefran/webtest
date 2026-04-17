@@ -2,8 +2,10 @@ package webtest
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -113,14 +115,23 @@ func cloneStringMap(m map[string]string) map[string]string {
 		return nil
 	}
 	cloned := make(map[string]string, len(m))
-	for k, v := range m {
-		cloned[k] = v
-	}
+	maps.Copy(cloned, m)
 	return cloned
 }
 
 func defaultLogFilePath(now time.Time) string {
 	return "./" + now.UTC().Format("20060102T150405Z") + ".log"
+}
+
+func formatRequestHeadersForLog(headers http.Header) (string, error) {
+	if len(headers) == 0 {
+		return "{}", nil
+	}
+	body, err := json.Marshal(headers)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
 
 func (w *WebClient) snapshotConfig() (map[string]string, WebClientOptions) {
@@ -237,10 +248,23 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 			return res, err
 		} else {
 			writeErr := WriteToFile(f, []byte(s))
-			closeErr := CloseFile(f)
 			if writeErr != nil {
+				_ = CloseFile(f)
 				return res, writeErr
 			}
+			if opts.WriteSettings.writeHeader {
+				headerLine, headerFormatErr := formatRequestHeadersForLog(req.Header)
+				if headerFormatErr != nil {
+					_ = CloseFile(f)
+					return res, headerFormatErr
+				}
+				headerErr := WriteToFile(f, []byte(headerLine))
+				if headerErr != nil {
+					_ = CloseFile(f)
+					return res, headerErr
+				}
+			}
+			closeErr := CloseFile(f)
 			if closeErr != nil {
 				return res, closeErr
 			}

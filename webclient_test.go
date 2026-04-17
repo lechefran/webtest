@@ -1,8 +1,10 @@
 package webtest
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -273,6 +275,62 @@ func TestOptionsCopiesInputStruct(t *testing.T) {
 	}
 	if client.options.FilePath != "./initial.log" {
 		t.Fatalf("expected copied file path ./initial.log, got %q", client.options.FilePath)
+	}
+}
+
+func TestWriteHeadersToFileWhenEnabled(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("Hello, World!"))
+	}))
+	defer server.Close()
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "webtest-headers-*.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	headers := map[string]string{
+		"Content-Type": "application/json",
+		"X-Test":       "abc123",
+	}
+	opts := WebClientOptions{
+		WriteToFile: true,
+		FilePath:    tmpPath,
+		WriteSettings: WriteSettings{
+			writeHeader: true,
+		},
+	}
+
+	client := InitWebClient().Headers(headers).Options(opts)
+	res, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCloseResponse(t, client, res)
+
+	content, err := os.ReadFile(tmpPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 log lines (call + headers), got %d", len(lines))
+	}
+
+	var headersJSON map[string][]string
+	if err := json.Unmarshal([]byte(lines[1]), &headersJSON); err != nil {
+		t.Fatalf("expected valid json headers line, got %q: %v", lines[1], err)
+	}
+	if len(headersJSON["Content-Type"]) == 0 || headersJSON["Content-Type"][0] != "application/json" {
+		t.Fatalf("expected Content-Type header in json log output, got: %#v", headersJSON)
+	}
+	if len(headersJSON["X-Test"]) == 0 || headersJSON["X-Test"][0] != "abc123" {
+		t.Fatalf("expected X-Test header in json log output, got: %#v", headersJSON)
 	}
 }
 

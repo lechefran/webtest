@@ -13,6 +13,7 @@ settings.
 		using a Windows-safe UTC timestamp format.
 */
 type WebClientOptions struct {
-	WriteToFile bool   `json:"writeToFile"`
-	FilePath    string `json:"filePath"`
+	WriteToFile   bool          `json:"writeToFile"`
+	FilePath      string        `json:"filePath"`
+	WriteSettings WriteSettings `json:"writeSettings"`
 }
