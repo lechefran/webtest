@@ -151,6 +151,12 @@ GET http://localhost:8080/resource 200 OK total=0.043s connect=0.007s
 GET http://localhost:8080/resource 200 OK total=0.012s conn=reused
 ```
 
+If `WriteSettings.logMetadata` is enabled, the call line also includes request/response payload sizes in readable units:
+
+```text
+POST http://localhost:8080/resource 200 OK total=0.043s sent=512 b received=1.25 Kb connect=0.007s
+```
+
 - `total`: full elapsed time for that request (`client.Do` wall-clock duration).
 - `connect`: TCP connect time for new connections.
 - `conn=reused`: the request used an existing keep-alive connection, so no new connect step occurred.

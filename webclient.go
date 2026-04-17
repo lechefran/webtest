@@ -26,8 +26,8 @@ type WebClient struct {
 }
 
 const (
-	logPrefixHeaders = "[HEADERS] "
-	logPrefixRequest = "[REQUEST] "
+	logPrefixHeaders  = "[HEADERS] "
+	logPrefixRequest  = "[REQUEST] "
 	logPrefixResponse = "[RESPONSE] "
 )
 
@@ -161,17 +161,30 @@ func formatRequestBodyForLog(body []byte) (string, error) {
 	return string(serialized), nil
 }
 
-func prepareRequestBodyForLog(req *http.Request) (string, bool, error) {
+func formatByteSize(n int) string {
+	if n < 1024 {
+		return fmt.Sprintf("%db", n)
+	}
+	if n < 1024*1024 {
+		return fmt.Sprintf("%.2fKb", float64(n)/1024)
+	}
+	if n < 1024*1024*1024 {
+		return fmt.Sprintf("%.2fMb", float64(n)/(1024*1024))
+	}
+	return fmt.Sprintf("%.2fGb", float64(n)/(1024*1024*1024))
+}
+
+func prepareRequestBodyForLog(req *http.Request) (string, bool, int, error) {
 	if req == nil || req.Body == nil || req.Body == http.NoBody {
-		return "", false, nil
+		return "", false, 0, nil
 	}
 
 	bodyBytes, err := io.ReadAll(req.Body)
 	if err != nil {
-		return "", false, err
+		return "", false, 0, err
 	}
 	if err := req.Body.Close(); err != nil {
-		return "", false, err
+		return "", false, 0, err
 	}
 
 	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
@@ -180,41 +193,238 @@ func prepareRequestBodyForLog(req *http.Request) (string, bool, error) {
 	}
 
 	if len(bytes.TrimSpace(bodyBytes)) == 0 {
-		return "", false, nil
+		return "", false, len(bodyBytes), nil
 	}
 
 	bodyLine, err := formatRequestBodyForLog(bodyBytes)
 	if err != nil {
-		return "", false, err
+		return "", false, len(bodyBytes), err
 	}
-	return bodyLine, true, nil
+	return bodyLine, true, len(bodyBytes), nil
 }
 
-func prepareResponseBodyForLog(res *http.Response) (string, bool, error) {
+func prepareResponseBodyForLog(res *http.Response) (string, bool, int, error) {
 	if res == nil || res.Body == nil || res.Body == http.NoBody {
-		return "", false, nil
+		return "", false, 0, nil
 	}
 
 	bodyBytes, err := io.ReadAll(res.Body)
 	if err != nil {
-		return "", false, err
+		return "", false, 0, err
 	}
 	if err := res.Body.Close(); err != nil {
-		return "", false, err
+		return "", false, 0, err
 	}
 
 	// Restore the response body so callers can still read it.
 	res.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	if len(bytes.TrimSpace(bodyBytes)) == 0 {
-		return "", false, nil
+		return "", false, len(bodyBytes), nil
 	}
 
 	bodyLine, err := formatRequestBodyForLog(bodyBytes)
 	if err != nil {
-		return "", false, err
+		return "", false, len(bodyBytes), err
 	}
-	return bodyLine, true, nil
+	return bodyLine, true, len(bodyBytes), nil
+}
+
+type bodyLogPayload struct {
+	line    string
+	hasLine bool
+	bytes   int
+}
+
+type requestTiming struct {
+	totalDuration time.Duration
+	connDuration  time.Duration
+	connReused    bool
+}
+
+func shouldPrepareRequestBodyForLog(opts WebClientOptions) bool {
+	return opts.WriteToFile && (opts.WriteSettings.writeRequest || opts.WriteSettings.logMetadata)
+}
+
+func shouldPrepareResponseBodyForLog(opts WebClientOptions) bool {
+	return opts.WriteToFile && (opts.WriteSettings.writeResponse || opts.WriteSettings.logMetadata)
+}
+
+func prepareRequestPayloadForLog(req *http.Request, opts WebClientOptions) (bodyLogPayload, error) {
+	if !shouldPrepareRequestBodyForLog(opts) {
+		return bodyLogPayload{}, nil
+	}
+
+	line, hasLine, bodyBytes, err := prepareRequestBodyForLog(req)
+	if err != nil {
+		return bodyLogPayload{}, err
+	}
+
+	return bodyLogPayload{
+		line:    line,
+		hasLine: hasLine,
+		bytes:   bodyBytes,
+	}, nil
+}
+
+func prepareResponsePayloadForLog(res *http.Response, opts WebClientOptions) (bodyLogPayload, error) {
+	if !shouldPrepareResponseBodyForLog(opts) {
+		return bodyLogPayload{}, nil
+	}
+
+	line, hasLine, bodyBytes, err := prepareResponseBodyForLog(res)
+	if err != nil {
+		return bodyLogPayload{}, err
+	}
+
+	return bodyLogPayload{
+		line:    line,
+		hasLine: hasLine,
+		bytes:   bodyBytes,
+	}, nil
+}
+
+func buildCallSummary(
+	req *http.Request,
+	requestURL string,
+	res *http.Response,
+	timing requestTiming,
+	opts WebClientOptions,
+	requestBytes int,
+	responseBytes int,
+) string {
+	var summary string
+	if res != nil {
+		summary = req.Method + " " + requestURL + " " + res.Status + " total=" + fmt.Sprintf("%.3fs", timing.totalDuration.Seconds())
+	} else {
+		summary = req.Method + " " + requestURL + " ERROR total=" + fmt.Sprintf("%.3fs", timing.totalDuration.Seconds())
+	}
+
+	if timing.connReused {
+		summary += " conn=reused"
+	} else {
+		summary += " connect=" + fmt.Sprintf("%.3fs", timing.connDuration.Seconds())
+	}
+
+	if opts.WriteSettings.logMetadata {
+		summary += " sent=" + formatByteSize(requestBytes) + " received=" + formatByteSize(responseBytes)
+	}
+
+	return summary
+}
+
+func printCallSummary(summary string, res *http.Response) {
+	if res == nil {
+		color.HiRed(summary)
+		return
+	}
+
+	if Is2xxSuccessful(res) {
+		color.Green(summary)
+		return
+	}
+	if Is3xxRedirection(res) {
+		color.Yellow(summary)
+		return
+	}
+	color.HiRed(summary)
+}
+
+func resolveLogFilePath(opts WebClientOptions) string {
+	if opts.FilePath != "" {
+		return opts.FilePath
+	}
+
+	fileName := defaultLogFilePath(time.Now())
+	color.HiBlue("Application logs will be saved to ", fileName)
+	return fileName
+}
+
+func writeRequestLogs(
+	opts WebClientOptions,
+	req *http.Request,
+	callSummary string,
+	requestPayload bodyLogPayload,
+	responsePayload bodyLogPayload,
+) error {
+	if !opts.WriteToFile {
+		return nil
+	}
+
+	fileName := resolveLogFilePath(opts)
+	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+
+	if err := WriteToFile(f, []byte(callSummary)); err != nil {
+		_ = CloseFile(f)
+		return err
+	}
+
+	if opts.WriteSettings.writeHeaders {
+		headerLine, err := formatRequestHeadersForLog(req.Header)
+		if err != nil {
+			_ = CloseFile(f)
+			return err
+		}
+		if err := WriteToFile(f, []byte(logPrefixHeaders+headerLine)); err != nil {
+			_ = CloseFile(f)
+			return err
+		}
+	}
+
+	if opts.WriteSettings.writeRequest && requestPayload.hasLine {
+		if err := WriteToFile(f, []byte(logPrefixRequest+requestPayload.line)); err != nil {
+			_ = CloseFile(f)
+			return err
+		}
+	}
+
+	if opts.WriteSettings.writeResponse && responsePayload.hasLine {
+		if err := WriteToFile(f, []byte(logPrefixResponse+responsePayload.line)); err != nil {
+			_ = CloseFile(f)
+			return err
+		}
+	}
+
+	return CloseFile(f)
+}
+
+func (w *WebClient) doRequestWithTiming(req *http.Request) (*http.Response, requestTiming, error) {
+	start := time.Now()
+	var connStart time.Time
+	var connDuration time.Duration
+	var connReused bool
+
+	trace := &httptrace.ClientTrace{
+		ConnectStart: func(_, _ string) {
+			connStart = time.Now()
+		},
+		ConnectDone: func(_, _ string, err error) {
+			if err != nil || connStart.IsZero() {
+				return
+			}
+			connDuration += time.Since(connStart)
+			connStart = time.Time{}
+		},
+		GotConn: func(info httptrace.GotConnInfo) {
+			connReused = info.Reused
+		},
+	}
+
+	tracedReq := req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+	res, err := w.client.Do(tracedReq)
+	timing := requestTiming{
+		totalDuration: time.Since(start),
+		connDuration:  connDuration,
+		connReused:    connReused,
+	}
+
+	if err != nil {
+		return res, timing, err
+	}
+	return res, timing, nil
 }
 
 func (w *WebClient) snapshotConfig() (map[string]string, WebClientOptions) {
@@ -261,134 +471,31 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		return nil, errors.New("request cannot be nil")
 	}
 	headers, opts := w.snapshotConfig()
+	SetHeaders(req, headers)
 
-	if headers != nil {
-		SetHeaders(req, headers)
+	requestPayload, err := prepareRequestPayloadForLog(req, opts)
+	if err != nil {
+		return nil, err
 	}
 
-	var requestBodyLine string
-	hasRequestBodyLine := false
-	if opts.WriteToFile && opts.WriteSettings.writeRequest {
-		var prepareErr error
-		requestBodyLine, hasRequestBodyLine, prepareErr = prepareRequestBodyForLog(req)
-		if prepareErr != nil {
-			return nil, prepareErr
-		}
-	}
-
-	start := time.Now()
-	var connStart time.Time
-	var connDuration time.Duration
-	var connReused bool
-	trace := &httptrace.ClientTrace{
-		ConnectStart: func(_, _ string) {
-			connStart = time.Now()
-		},
-		ConnectDone: func(_, _ string, err error) {
-			if err != nil || connStart.IsZero() {
-				return
-			}
-			connDuration += time.Since(connStart)
-			connStart = time.Time{}
-		},
-		GotConn: func(info httptrace.GotConnInfo) {
-			connReused = info.Reused
-		},
-	}
-	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
-
-	res, err := w.client.Do(req)
-	totalDuration := time.Since(start)
+	res, timing, err := w.doRequestWithTiming(req)
 	if err != nil {
 		return res, err
 	}
 
-	var responseBodyLine string
-	hasResponseBodyLine := false
-	if opts.WriteToFile && opts.WriteSettings.writeResponse {
-		var prepareErr error
-		responseBodyLine, hasResponseBodyLine, prepareErr = prepareResponseBodyForLog(res)
-		if prepareErr != nil {
-			return res, prepareErr
-		}
+	responsePayload, err := prepareResponsePayloadForLog(res, opts)
+	if err != nil {
+		return res, err
 	}
 
-	var s string
-	if res != nil {
-		s = req.Method + " " + url + " " + res.Status + " total=" + fmt.Sprintf("%.3fs", totalDuration.Seconds())
-		if connReused {
-			s += " conn=reused"
-		} else {
-			s += " connect=" + fmt.Sprintf("%.3fs", connDuration.Seconds())
-		}
-		if Is2xxSuccessful(res) {
-			color.Green(s)
-		} else if Is3xxRedirection(res) {
-			color.Yellow(s)
-		} else {
-			color.HiRed(s)
-		}
-	} else {
-		s = req.Method + " " + url + " ERROR total=" + fmt.Sprintf("%.3fs", totalDuration.Seconds())
-		if connReused {
-			s += " conn=reused"
-		} else {
-			s += " connect=" + fmt.Sprintf("%.3fs", connDuration.Seconds())
-		}
-		color.HiRed(s)
+	summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, responsePayload.bytes)
+	printCallSummary(summary, res)
+
+	if err := writeRequestLogs(opts, req, summary, requestPayload, responsePayload); err != nil {
+		return res, err
 	}
 
-	if opts.WriteToFile {
-		var fileName string
-		if opts.FilePath != "" {
-			fileName = opts.FilePath
-		} else {
-			fileName = defaultLogFilePath(time.Now())
-			color.HiBlue("Application logs will be saved to ", fileName)
-		}
-
-		if f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err != nil {
-			return res, err
-		} else {
-			writeErr := WriteToFile(f, []byte(s))
-			if writeErr != nil {
-				_ = CloseFile(f)
-				return res, writeErr
-			}
-			if opts.WriteSettings.writeHeaders {
-				headerLine, headerFormatErr := formatRequestHeadersForLog(req.Header)
-				if headerFormatErr != nil {
-					_ = CloseFile(f)
-					return res, headerFormatErr
-				}
-				headerErr := WriteToFile(f, []byte(logPrefixHeaders+headerLine))
-				if headerErr != nil {
-					_ = CloseFile(f)
-					return res, headerErr
-				}
-			}
-			if opts.WriteSettings.writeRequest && hasRequestBodyLine {
-				bodyErr := WriteToFile(f, []byte(logPrefixRequest+requestBodyLine))
-				if bodyErr != nil {
-					_ = CloseFile(f)
-					return res, bodyErr
-				}
-			}
-			if opts.WriteSettings.writeResponse && hasResponseBodyLine {
-				bodyErr := WriteToFile(f, []byte(logPrefixResponse+responseBodyLine))
-				if bodyErr != nil {
-					_ = CloseFile(f)
-					return res, bodyErr
-				}
-			}
-			closeErr := CloseFile(f)
-			if closeErr != nil {
-				return res, closeErr
-			}
-		}
-	}
-
-	return res, err
+	return res, nil
 }
 
 func (w *WebClient) CloseIdleConnections() {

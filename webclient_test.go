@@ -471,6 +471,116 @@ func TestWriteResponseToFileWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestWriteMetadataToFileWhenEnabled(t *testing.T) {
+	requestBody := []byte(`{"query":"pizza","limit":5}`)
+	responseBody := []byte(`{"ok":true,"count":3}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		_, _ = w.Write(responseBody)
+	}))
+	defer server.Close()
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "webtest-metadata-*.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := WebClientOptions{
+		WriteToFile: true,
+		FilePath:    tmpPath,
+		WriteSettings: WriteSettings{
+			logMetadata: true,
+		},
+	}
+
+	client := InitWebClient().Options(opts)
+	res, err := client.Post(server.URL, requestBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCloseResponse(t, client, res)
+
+	content, err := os.ReadFile(tmpPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	if len(lines) < 1 {
+		t.Fatalf("expected at least 1 log line (call), got %d", len(lines))
+	}
+
+	callLine := lines[0]
+	expectedSent := " sent=" + formatByteSize(len(requestBody))
+	expectedReceived := " received=" + formatByteSize(len(responseBody))
+
+	connectIdx := strings.Index(callLine, " connect=")
+	if connectIdx < 0 {
+		connectIdx = strings.Index(callLine, " conn=reused")
+		if connectIdx < 0 {
+			t.Fatalf("expected call line to include connection timing or reuse, got %q", callLine)
+		}
+	}
+	sentIdx := strings.Index(callLine, expectedSent)
+	if sentIdx < 0 {
+		t.Fatalf("expected call line to contain %q, got %q", expectedSent, callLine)
+	}
+	if sentIdx < connectIdx {
+		t.Fatalf("expected sent metadata to appear after connection data, got %q", callLine)
+	}
+
+	receivedIdx := strings.Index(callLine, expectedReceived)
+	if receivedIdx < 0 {
+		t.Fatalf("expected call line to contain %q, got %q", expectedReceived, callLine)
+	}
+	if receivedIdx < sentIdx {
+		t.Fatalf("expected received metadata to appear after sent metadata, got %q", callLine)
+	}
+}
+
+func TestFormatByteSize(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    int
+		expected string
+	}{
+		{
+			name:     "bytes",
+			input:    512,
+			expected: "512b",
+		},
+		{
+			name:     "kilobytes",
+			input:    2048,
+			expected: "2.00Kb",
+		},
+		{
+			name:     "megabytes",
+			input:    1024 * 1024,
+			expected: "1.00Mb",
+		},
+		{
+			name:     "gigabytes",
+			input:    1024 * 1024 * 1024,
+			expected: "1.00Gb",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatByteSize(tc.input)
+			if got != tc.expected {
+				t.Fatalf("expected %q, got %q", tc.expected, got)
+			}
+		})
+	}
+}
+
 func TestConcurrentRequestsWithConfigUpdates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("Hello, World!"))
