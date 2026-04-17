@@ -28,6 +28,7 @@ type WebClient struct {
 const (
 	logPrefixHeaders = "[HEADERS] "
 	logPrefixRequest = "[REQUEST] "
+	logPrefixResponse = "[RESPONSE] "
 )
 
 func InitWebClient() *WebClient {
@@ -189,6 +190,33 @@ func prepareRequestBodyForLog(req *http.Request) (string, bool, error) {
 	return bodyLine, true, nil
 }
 
+func prepareResponseBodyForLog(res *http.Response) (string, bool, error) {
+	if res == nil || res.Body == nil || res.Body == http.NoBody {
+		return "", false, nil
+	}
+
+	bodyBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", false, err
+	}
+	if err := res.Body.Close(); err != nil {
+		return "", false, err
+	}
+
+	// Restore the response body so callers can still read it.
+	res.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	if len(bytes.TrimSpace(bodyBytes)) == 0 {
+		return "", false, nil
+	}
+
+	bodyLine, err := formatRequestBodyForLog(bodyBytes)
+	if err != nil {
+		return "", false, err
+	}
+	return bodyLine, true, nil
+}
+
 func (w *WebClient) snapshotConfig() (map[string]string, WebClientOptions) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -275,6 +303,16 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		return res, err
 	}
 
+	var responseBodyLine string
+	hasResponseBodyLine := false
+	if opts.WriteToFile && opts.WriteSettings.writeResponse {
+		var prepareErr error
+		responseBodyLine, hasResponseBodyLine, prepareErr = prepareResponseBodyForLog(res)
+		if prepareErr != nil {
+			return res, prepareErr
+		}
+	}
+
 	var s string
 	if res != nil {
 		s = req.Method + " " + url + " " + res.Status + " total=" + fmt.Sprintf("%.3fs", totalDuration.Seconds())
@@ -331,6 +369,13 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 			}
 			if opts.WriteSettings.writeRequest && hasRequestBodyLine {
 				bodyErr := WriteToFile(f, []byte(logPrefixRequest+requestBodyLine))
+				if bodyErr != nil {
+					_ = CloseFile(f)
+					return res, bodyErr
+				}
+			}
+			if opts.WriteSettings.writeResponse && hasResponseBodyLine {
+				bodyErr := WriteToFile(f, []byte(logPrefixResponse+responseBodyLine))
 				if bodyErr != nil {
 					_ = CloseFile(f)
 					return res, bodyErr

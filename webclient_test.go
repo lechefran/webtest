@@ -406,6 +406,71 @@ func TestWriteRequestToFileWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestWriteResponseToFileWhenEnabled(t *testing.T) {
+	responseBody := []byte(`{"ok":true,"count":3}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(responseBody)
+	}))
+	defer server.Close()
+
+	tmpFile, err := os.CreateTemp(t.TempDir(), "webtest-response-*.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := WebClientOptions{
+		WriteToFile: true,
+		FilePath:    tmpPath,
+		WriteSettings: WriteSettings{
+			writeResponse: true,
+		},
+	}
+
+	client := InitWebClient().Options(opts)
+	res, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gotResponseBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(gotResponseBody, responseBody) {
+		t.Fatalf("expected response body %q, got %q", string(responseBody), string(gotResponseBody))
+	}
+	assertCloseResponse(t, client, res)
+
+	content, err := os.ReadFile(tmpPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 log lines (call + response body), got %d", len(lines))
+	}
+	if !strings.HasPrefix(lines[1], logPrefixResponse) {
+		t.Fatalf("expected response line prefix %q, got %q", logPrefixResponse, lines[1])
+	}
+
+	var responseJSON map[string]interface{}
+	responsePayload := strings.TrimPrefix(lines[1], logPrefixResponse)
+	if err := json.Unmarshal([]byte(responsePayload), &responseJSON); err != nil {
+		t.Fatalf("expected valid json response body line, got %q: %v", lines[1], err)
+	}
+	if responseJSON["ok"] != true {
+		t.Fatalf("expected response ok=true in json log output, got: %#v", responseJSON)
+	}
+	if responseJSON["count"] != float64(3) {
+		t.Fatalf("expected response count in json log output, got: %#v", responseJSON)
+	}
+}
+
 func TestConcurrentRequestsWithConfigUpdates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("Hello, World!"))
