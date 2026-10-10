@@ -624,15 +624,16 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		return nil, errors.New("request cannot be nil")
 	}
 	headers, opts := w.snapshotConfig()
-	if len(opts.AllowedOrigins) == 0 {
-		return nil, errors.New("allowed origins must be configured to make HTTP requests")
-	}
-	allowedOrigins, err := parseAllowedOrigins(opts.AllowedOrigins)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateRequestOrigin(req.URL.String(), allowedOrigins); err != nil {
-		return nil, err
+	var allowedOrigins map[requestOrigin]struct{}
+	if len(opts.AllowedOrigins) > 0 {
+		var err error
+		allowedOrigins, err = parseAllowedOrigins(opts.AllowedOrigins)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateRequestOrigin(req.URL.String(), allowedOrigins); err != nil {
+			return nil, err
+		}
 	}
 	SetHeaders(req, headers)
 
@@ -670,7 +671,7 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 func (w *WebClient) validateRequestURL(raw string) error {
 	_, opts := w.snapshotConfig()
 	if len(opts.AllowedOrigins) == 0 {
-		return errors.New("allowed origins must be configured to make HTTP requests")
+		return nil
 	}
 	allowedOrigins, err := parseAllowedOrigins(opts.AllowedOrigins)
 	if err != nil {
