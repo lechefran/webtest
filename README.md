@@ -50,6 +50,11 @@ func main() {
 
 Use this pattern when requests are driven by input files (IDs, keywords, filters, etc.): read CSV rows, map row values into query params, execute requests in a loop, and optionally log each call.
 
+`ReadCsv(path)` opens the path supplied by the caller. Do not pass a path derived
+from untrusted input unless the application first constrains it to an approved
+directory. Cleaning or normalizing a path alone does not prevent directory
+traversal or symlink escape.
+
 ```go
 package main
 
@@ -118,6 +123,12 @@ type WebClientOptions struct {
 	AllowedOrigins []string // optional exact HTTP(S) origins permitted for requests and redirects
 }
 ```
+
+When file logging is enabled, `FilePath` is trusted local filesystem
+configuration: the client appends logs to that path. Do not populate it from
+untrusted input. Paths containing a `..` segment are rejected, but absolute paths
+and symlinks are not confined to a directory. If untrusted users need to select
+logs, map their choices to application-controlled paths instead.
 
 ### Restricting request destinations
 

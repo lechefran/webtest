@@ -27,6 +27,9 @@ func FormatStringArray(buf *bytes.Buffer, arr []string, delimiter string) *bytes
 	return buf
 }
 
+// ReadCsv reads CSV records from path. Callers must not pass paths influenced
+// by untrusted input unless they first constrain them to an approved directory.
+// filepath.Clean normalizes a path but does not prevent traversal or symlink escape.
 func ReadCsv(path string) (records [][]string, err error) {
 	cleanPath := filepath.Clean(path)
 	f, err := os.Open(cleanPath)

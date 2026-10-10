@@ -478,12 +478,13 @@ func (w *WebClient) writeRequestLogs(
 		return nil
 	}
 
-	fileName := filepath.Clean(w.resolveLogFilePath(opts))
+	fileName := w.resolveLogFilePath(opts)
 	for _, part := range strings.Split(filepath.ToSlash(fileName), "/") {
 		if part == ".." {
 			return fmt.Errorf("invalid log file path: %q", fileName)
 		}
 	}
+	fileName = filepath.Clean(fileName)
 	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err

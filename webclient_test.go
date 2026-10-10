@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -426,6 +427,23 @@ func TestWriteHeadersToFileWhenEnabled(t *testing.T) {
 	}
 	if len(headersJSON["X-Test"]) == 0 || headersJSON["X-Test"][0] != "abc123" {
 		t.Fatalf("expected X-Test header in json log output, got: %#v", headersJSON)
+	}
+}
+
+func TestWriteRequestLogsRejectsParentDirectorySegment(t *testing.T) {
+	client := InitWebClient()
+	err := client.writeRequestLogs(
+		WebClientOptions{
+			WriteToFile: true,
+			FilePath:    strings.Join([]string{t.TempDir(), "..", "outside.log"}, string(filepath.Separator)),
+		},
+		&http.Request{Header: make(http.Header)},
+		"",
+		bodyLogPayload{},
+		bodyLogPayload{},
+	)
+	if err == nil {
+		t.Fatal("expected parent-directory path segment to be rejected")
 	}
 }
 
