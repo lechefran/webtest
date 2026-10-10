@@ -5,15 +5,22 @@ import (
 	"encoding/csv"
 	"errors"
 	"os"
+	"path/filepath"
 )
 
 func FormatStringArray(buf *bytes.Buffer, arr []string, delimiter string) *bytes.Buffer {
 	buf.WriteString("[")
 	for i := range arr {
 		if i != len(arr)-1 {
-			buf.WriteString("\"" + arr[i] + "\"" + delimiter + " ")
+			buf.WriteByte('"')
+			buf.WriteString(arr[i])
+			buf.WriteByte('"')
+			buf.WriteString(delimiter)
+			buf.WriteByte(' ')
 		} else {
-			buf.WriteString("\"" + arr[i] + "\"")
+			buf.WriteByte('"')
+			buf.WriteString(arr[i])
+			buf.WriteByte('"')
 		}
 	}
 	buf.WriteString("]")
@@ -21,7 +28,8 @@ func FormatStringArray(buf *bytes.Buffer, arr []string, delimiter string) *bytes
 }
 
 func ReadCsv(path string) (records [][]string, err error) {
-	f, err := os.Open(path)
+	cleanPath := filepath.Clean(path)
+	f, err := os.Open(cleanPath)
 	if err != nil {
 		return nil, err
 	}

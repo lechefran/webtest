@@ -54,6 +54,73 @@ func TestSuccessfulGet(t *testing.T) {
 	}
 }
 
+func TestAllowedOrigins(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := InitWebClient().Options(WebClientOptions{
+		AllowedOrigins: []string{server.URL},
+	})
+	res, err := client.Get(server.URL + "/allowed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer assertCloseResponse(t, client, res)
+	if !Is2xxSuccessful(res) {
+		t.Fatalf("expected successful response, got %s", res.Status)
+	}
+}
+
+func TestAllowedOriginsRejectsUnlistedDestination(t *testing.T) {
+	firstServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer firstServer.Close()
+	secondServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer secondServer.Close()
+
+	client := InitWebClient().Options(WebClientOptions{
+		AllowedOrigins: []string{firstServer.URL},
+	})
+	if _, err := client.Get(secondServer.URL); err == nil {
+		t.Fatal("expected an error for an unlisted destination")
+	}
+}
+
+func TestAllowedOriginsRejectsUnlistedRedirect(t *testing.T) {
+	secondServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer secondServer.Close()
+	firstServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", secondServer.URL)
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer firstServer.Close()
+
+	client := InitWebClient().Options(WebClientOptions{
+		AllowedOrigins: []string{firstServer.URL},
+	})
+	if _, err := client.Get(firstServer.URL); err == nil {
+		t.Fatal("expected an error for a redirect to an unlisted destination")
+	}
+}
+
+func TestOptionsCopiesAllowedOrigins(t *testing.T) {
+	origins := []string{"https://example.com"}
+	client := InitWebClient().Options(WebClientOptions{AllowedOrigins: origins})
+	origins[0] = "https://attacker.example"
+
+	_, opts := client.snapshotConfig()
+	if opts.AllowedOrigins[0] != "https://example.com" {
+		t.Fatalf("expected stored allowlist to be independent of caller slice, got %q", opts.AllowedOrigins[0])
+	}
+}
+
 func TestRedirectedGet(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(300)
@@ -271,12 +338,12 @@ func TestHeadersCopiesInputMap(t *testing.T) {
 
 func TestOptionsCopiesInputStruct(t *testing.T) {
 	opts := WebClientOptions{
-		WriteToFile:   true,
-		FilePath:      "./initial.log",
-		WriteHeaders:  true,
-		WriteRequest:  true,
-		WriteResponse: true,
-		LogMetadata:   true,
+		WriteToFile:    true,
+		FilePath:       "./initial.log",
+		WriteHeaders:   true,
+		WriteRequest:   true,
+		WriteResponse:  true,
+		LogMetadata:    true,
 		RequestTimeout: 15 * time.Second,
 	}
 	client := InitWebClient()

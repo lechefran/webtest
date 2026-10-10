@@ -21,11 +21,12 @@ configuration.
 		client uses the package default timeout.
 */
 type WebClientOptions struct {
-	WriteToFile   bool   `json:"writeToFile"`
-	FilePath      string `json:"filePath"`
-	WriteHeaders  bool   `json:"writeHeaders"`
-	WriteRequest  bool   `json:"writeRequest"`
-	WriteResponse bool   `json:"writeResponse"`
-	LogMetadata   bool   `json:"logMetadata"`
+	WriteToFile    bool          `json:"writeToFile"`
+	FilePath       string        `json:"filePath"`
+	WriteHeaders   bool          `json:"writeHeaders"`
+	WriteRequest   bool          `json:"writeRequest"`
+	WriteResponse  bool          `json:"writeResponse"`
+	LogMetadata    bool          `json:"logMetadata"`
 	RequestTimeout time.Duration `json:"requestTimeout"`
+	AllowedOrigins []string      `json:"allowedOrigins"`
 }

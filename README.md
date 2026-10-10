@@ -115,8 +115,31 @@ type WebClientOptions struct {
 	WriteResponse bool   // append response body as a JSON log line
 	LogMetadata   bool   // append sent/received sizes to the call line
 	RequestTimeout time.Duration // total request timeout; defaults to 30s when unset
+	AllowedOrigins []string // optional exact HTTP(S) origins permitted for requests and redirects
 }
 ```
+
+### Restricting request destinations
+
+When request URLs can be influenced by untrusted input, configure `AllowedOrigins`
+to restrict the client to explicit origins. Origins include the scheme and port,
+for example:
+
+```go
+client := webtest.InitWebClient().Options(webtest.WebClientOptions{
+	AllowedOrigins: []string{
+		"https://api.example.com",
+		"http://localhost:8080",
+	},
+})
+```
+
+The allowlist is checked before the initial request and on every redirect. Entries
+must be absolute HTTP(S) origins without credentials, paths, queries, or fragments.
+Hostnames are matched exactly; wildcards are not supported. An empty allowlist
+preserves the unrestricted behavior for existing API-testing workflows. Configure
+an allowlist at the application boundary whenever destinations may come from
+untrusted input.
 
 ## Error Handling Model
 
