@@ -50,6 +50,11 @@ func main() {
 
 Use this pattern when requests are driven by input files (IDs, keywords, filters, etc.): read CSV rows, map row values into query params, execute requests in a loop, and optionally log each call.
 
+`ReadCsv(path)` opens the path supplied by the caller. Do not pass a path derived
+from untrusted input unless the application first constrains it to an approved
+directory. Cleaning or normalizing a path alone does not prevent directory
+traversal or symlink escape.
+
 ```go
 package main
 
@@ -115,8 +120,37 @@ type WebClientOptions struct {
 	WriteResponse bool   // append response body as a JSON log line
 	LogMetadata   bool   // append sent/received sizes to the call line
 	RequestTimeout time.Duration // total request timeout; defaults to 30s when unset
+	AllowedOrigins []string // optional exact HTTP(S) origins permitted for requests and redirects
 }
 ```
+
+When file logging is enabled, `FilePath` is trusted local filesystem
+configuration: the client appends logs to that path. Do not populate it from
+untrusted input. Paths containing a `..` segment are rejected, but absolute paths
+and symlinks are not confined to a directory. If untrusted users need to select
+logs, map their choices to application-controlled paths instead.
+
+### Restricting request destinations
+
+When request URLs can be influenced by untrusted input, configure `AllowedOrigins`
+to restrict the client to explicit origins. Origins include the scheme and port,
+for example:
+
+```go
+client := webtest.InitWebClient().Options(webtest.WebClientOptions{
+	AllowedOrigins: []string{
+		"https://api.example.com",
+		"http://localhost:8080",
+	},
+})
+```
+
+The allowlist is checked before the initial request and on every redirect. Entries
+must be absolute HTTP(S) origins without credentials, paths, queries, or fragments.
+Hostnames are matched exactly; wildcards are not supported. An empty allowlist
+preserves the unrestricted behavior for existing API-testing workflows. Configure
+an allowlist at the application boundary whenever destinations may come from
+untrusted input.
 
 ## Error Handling Model
 

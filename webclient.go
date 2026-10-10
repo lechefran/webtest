@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,9 +31,9 @@ type WebClient struct {
 }
 
 const (
-	logPrefixHeaders  = "[HEADERS] "
-	logPrefixRequest  = "[REQUEST] "
-	logPrefixResponse = "[RESPONSE] "
+	logPrefixHeaders      = "[HEADERS] "
+	logPrefixRequest      = "[REQUEST] "
+	logPrefixResponse     = "[RESPONSE] "
 	defaultRequestTimeout = 30 * time.Second
 )
 
@@ -45,8 +49,23 @@ func InitWebClient() *WebClient {
 	}
 }
 
+func (w *WebClient) newValidatedRequest(method string, rawURL string, body io.Reader) (*http.Request, error) {
+	if err := w.validateRequestURL(rawURL); err != nil {
+		return nil, err
+	}
+
+	//nolint:AIK_go_G107 // URL is validated against the configured allowlist before use.
+	// nosec G107 // URL is validated before making the HTTP request.
+	req, err := http.NewRequest(method, rawURL, body)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (w *WebClient) Get(url string) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := w.newValidatedRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +74,7 @@ func (w *WebClient) Get(url string) (*http.Response, error) {
 }
 
 func (w *WebClient) Post(url string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	req, err := w.newValidatedRequest(http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +83,7 @@ func (w *WebClient) Post(url string, body []byte) (*http.Response, error) {
 }
 
 func (w *WebClient) Patch(url string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
+	req, err := w.newValidatedRequest(http.MethodPatch, url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +92,7 @@ func (w *WebClient) Patch(url string, body []byte) (*http.Response, error) {
 }
 
 func (w *WebClient) Put(url string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(body))
+	req, err := w.newValidatedRequest(http.MethodPut, url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +101,7 @@ func (w *WebClient) Put(url string, body []byte) (*http.Response, error) {
 }
 
 func (w *WebClient) Delete(url string) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	req, err := w.newValidatedRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +125,7 @@ func (w *WebClient) Options(o WebClientOptions) *WebClient {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	w.options = o
+	w.options = cloneWebClientOptions(o)
 	w.generatedLogFilePath = ""
 	return w
 }
@@ -135,6 +154,87 @@ func cloneStringMap(m map[string]string) map[string]string {
 	cloned := make(map[string]string, len(m))
 	maps.Copy(cloned, m)
 	return cloned
+}
+
+func cloneWebClientOptions(opts WebClientOptions) WebClientOptions {
+	opts.AllowedOrigins = append([]string(nil), opts.AllowedOrigins...)
+	return opts
+}
+
+type requestOrigin struct {
+	scheme string
+	host   string
+	port   string
+}
+
+func parseRequestOrigin(raw string) (requestOrigin, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return requestOrigin{}, err
+	}
+	if !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil {
+		return requestOrigin{}, errors.New("must be an absolute HTTP or HTTPS origin without credentials")
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return requestOrigin{}, errors.New("only HTTP and HTTPS origins are allowed")
+	}
+
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	if host == "" {
+		return requestOrigin{}, errors.New("origin must include a hostname")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		host = ip.String()
+	}
+
+	port := parsed.Port()
+	if port == "" {
+		if scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	} else {
+		portNumber, err := strconv.Atoi(port)
+		if err != nil || portNumber < 1 || portNumber > 65535 {
+			return requestOrigin{}, errors.New("origin port must be between 1 and 65535")
+		}
+		port = strconv.Itoa(portNumber)
+	}
+
+	return requestOrigin{scheme: scheme, host: host, port: port}, nil
+}
+
+func parseAllowedOrigins(origins []string) (map[requestOrigin]struct{}, error) {
+	allowed := make(map[requestOrigin]struct{}, len(origins))
+	for _, raw := range origins {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid allowed origin %q: %w", raw, err)
+		}
+		if (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+			return nil, fmt.Errorf("invalid allowed origin %q: paths, queries, and fragments are not allowed", raw)
+		}
+		origin, err := parseRequestOrigin(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid allowed origin %q: %w", raw, err)
+		}
+		allowed[origin] = struct{}{}
+	}
+	return allowed, nil
+}
+
+func validateRequestOrigin(raw string, allowed map[requestOrigin]struct{}) error {
+	origin, err := parseRequestOrigin(raw)
+	if err != nil {
+		return fmt.Errorf("invalid request destination: %w", err)
+	}
+	if _, ok := allowed[origin]; !ok {
+		return fmt.Errorf("request destination %q is not in the allowed origins", raw)
+	}
+	return nil
 }
 
 func defaultLogFilePath(now time.Time) string {
@@ -379,6 +479,12 @@ func (w *WebClient) writeRequestLogs(
 	}
 
 	fileName := w.resolveLogFilePath(opts)
+	for _, part := range strings.Split(filepath.ToSlash(fileName), "/") {
+		if part == ".." {
+			return fmt.Errorf("invalid log file path: %q", fileName)
+		}
+	}
+	fileName = filepath.Clean(fileName)
 	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -418,7 +524,11 @@ func (w *WebClient) writeRequestLogs(
 	return CloseFile(f)
 }
 
-func (w *WebClient) doRequestWithTiming(req *http.Request, timeout time.Duration) (*http.Response, requestTiming, error) {
+func (w *WebClient) doRequestWithTiming(
+	req *http.Request,
+	timeout time.Duration,
+	allowedOrigins map[requestOrigin]struct{},
+) (*http.Response, requestTiming, error) {
 	start := time.Now()
 	var connStart time.Time
 	var connDuration time.Duration
@@ -443,6 +553,20 @@ func (w *WebClient) doRequestWithTiming(req *http.Request, timeout time.Duration
 	tracedReq := req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 	client := w.client
 	client.Timeout = timeout
+	if allowedOrigins != nil {
+		previousCheckRedirect := client.CheckRedirect
+		client.CheckRedirect = func(redirectReq *http.Request, via []*http.Request) error {
+			if previousCheckRedirect != nil {
+				if err := previousCheckRedirect(redirectReq, via); err != nil {
+					return err
+				}
+			} else if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+
+			return validateRequestOrigin(redirectReq.URL.String(), allowedOrigins)
+		}
+	}
 	res, err := client.Do(tracedReq)
 	timing := requestTiming{
 		totalDuration: time.Since(start),
@@ -460,7 +584,7 @@ func (w *WebClient) snapshotConfig() (map[string]string, WebClientOptions) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	return cloneStringMap(w.headers), w.options
+	return cloneStringMap(w.headers), cloneWebClientOptions(w.options)
 }
 
 func Is2xxSuccessful(r *http.Response) bool {
@@ -500,6 +624,17 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		return nil, errors.New("request cannot be nil")
 	}
 	headers, opts := w.snapshotConfig()
+	var allowedOrigins map[requestOrigin]struct{}
+	if len(opts.AllowedOrigins) > 0 {
+		var err error
+		allowedOrigins, err = parseAllowedOrigins(opts.AllowedOrigins)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateRequestOrigin(req.URL.String(), allowedOrigins); err != nil {
+			return nil, err
+		}
+	}
 	SetHeaders(req, headers)
 
 	requestPayload, err := prepareRequestPayloadForLog(req, opts)
@@ -507,7 +642,7 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 		return nil, err
 	}
 
-	res, timing, err := w.doRequestWithTiming(req, effectiveRequestTimeout(opts))
+	res, timing, err := w.doRequestWithTiming(req, effectiveRequestTimeout(opts), allowedOrigins)
 	if err != nil {
 		summary := buildCallSummary(req, url, res, timing, opts, requestPayload.bytes, 0, err)
 		printCallSummary(summary, res, err)
@@ -531,6 +666,18 @@ func (w *WebClient) execute(req *http.Request, url string) (*http.Response, erro
 	}
 
 	return res, nil
+}
+
+func (w *WebClient) validateRequestURL(raw string) error {
+	_, opts := w.snapshotConfig()
+	if len(opts.AllowedOrigins) == 0 {
+		return nil
+	}
+	allowedOrigins, err := parseAllowedOrigins(opts.AllowedOrigins)
+	if err != nil {
+		return err
+	}
+	return validateRequestOrigin(raw, allowedOrigins)
 }
 
 func (w *WebClient) CloseIdleConnections() {

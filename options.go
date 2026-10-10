@@ -13,6 +13,8 @@ configuration.
 		If WriteToFile is set to true, but no FilePath value is explicitly assigned,
 		the WebClient will create a file with the naming format ./YYYYMMDDThhmmssZ.log
 		using a Windows-safe UTC timestamp format.
+		FilePath is trusted local filesystem configuration. Do not populate it from
+		untrusted input; absolute paths and symlinks are not restricted to a directory.
 	- WriteHeaders appends the request headers to the log file as a JSON line.
 	- WriteRequest appends the request body to the log file as a JSON line.
 	- WriteResponse appends the response body to the log file as a JSON line.
@@ -21,11 +23,12 @@ configuration.
 		client uses the package default timeout.
 */
 type WebClientOptions struct {
-	WriteToFile   bool   `json:"writeToFile"`
-	FilePath      string `json:"filePath"`
-	WriteHeaders  bool   `json:"writeHeaders"`
-	WriteRequest  bool   `json:"writeRequest"`
-	WriteResponse bool   `json:"writeResponse"`
-	LogMetadata   bool   `json:"logMetadata"`
+	WriteToFile    bool          `json:"writeToFile"`
+	FilePath       string        `json:"filePath"` // trusted log destination; never set from untrusted input
+	WriteHeaders   bool          `json:"writeHeaders"`
+	WriteRequest   bool          `json:"writeRequest"`
+	WriteResponse  bool          `json:"writeResponse"`
+	LogMetadata    bool          `json:"logMetadata"`
 	RequestTimeout time.Duration `json:"requestTimeout"`
+	AllowedOrigins []string      `json:"allowedOrigins"`
 }

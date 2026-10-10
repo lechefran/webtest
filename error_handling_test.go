@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -19,7 +20,8 @@ func (c closeErrReadCloser) Close() error {
 }
 
 func TestReadCsvReturnsErrorForMissingFile(t *testing.T) {
-	_, err := ReadCsv("./does-not-exist.csv")
+	missingPath := filepath.Join(t.TempDir(), "does-not-exist.csv")
+	_, err := ReadCsv(missingPath)
 	if err == nil {
 		t.Fatal("expected error for missing csv file")
 	}
