@@ -477,7 +477,7 @@ func (w *WebClient) resolveLogFilePath(opts WebClientOptions) string {
 
 	if w.generatedLogFilePath == "" {
 		w.generatedLogFilePath = defaultLogFilePath(time.Now())
-		color.HiBlue("Application logs will be saved to ", w.generatedLogFilePath)
+		color.HiBlue("Application logs will be saved to %s", w.generatedLogFilePath)
 	}
 
 	return w.generatedLogFilePath
@@ -546,15 +546,23 @@ func (w *WebClient) doRequestWithTiming(
 	allowedOrigins map[requestOrigin]struct{},
 ) (*http.Response, requestTiming, error) {
 	start := time.Now()
+	// Trace hooks can fire on net/http's dialer goroutines, possibly after
+	// client.Do returns when a pooled connection wins the race, so guard the
+	// shared timing state.
+	var traceMu sync.Mutex
 	var connStart time.Time
 	var connDuration time.Duration
 	var connReused bool
 
 	trace := &httptrace.ClientTrace{
 		ConnectStart: func(_, _ string) {
+			traceMu.Lock()
+			defer traceMu.Unlock()
 			connStart = time.Now()
 		},
 		ConnectDone: func(_, _ string, err error) {
+			traceMu.Lock()
+			defer traceMu.Unlock()
 			if err != nil || connStart.IsZero() {
 				return
 			}
@@ -562,6 +570,8 @@ func (w *WebClient) doRequestWithTiming(
 			connStart = time.Time{}
 		},
 		GotConn: func(info httptrace.GotConnInfo) {
+			traceMu.Lock()
+			defer traceMu.Unlock()
 			connReused = info.Reused
 		},
 	}
@@ -584,11 +594,13 @@ func (w *WebClient) doRequestWithTiming(
 		}
 	}
 	res, err := client.Do(tracedReq)
+	traceMu.Lock()
 	timing := requestTiming{
 		totalDuration: time.Since(start),
 		connDuration:  connDuration,
 		connReused:    connReused,
 	}
+	traceMu.Unlock()
 
 	if err != nil {
 		return res, timing, err
