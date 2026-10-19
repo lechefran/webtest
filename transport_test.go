@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestInitTransport(t *testing.T) {
-	transport := InitTransport()
+func TestNewTransport(t *testing.T) {
+	transport := newTransport()
 	if transport == nil {
 		t.Error("No transport was initialized")
 	}
@@ -35,8 +35,8 @@ func TestTransportRoundTrip(t *testing.T) {
 	}
 }
 
-func TestInitTransportUsesDialContext(t *testing.T) {
-	transport := InitTransport()
+func TestNewTransportUsesDialContext(t *testing.T) {
+	transport := newTransport()
 	httpTransport, ok := transport.rtp.(*http.Transport)
 	if !ok {
 		t.Fatal("expected transport.rtp to be *http.Transport")
@@ -46,8 +46,8 @@ func TestInitTransportUsesDialContext(t *testing.T) {
 	}
 }
 
-func TestInitTransportPreservesDefaultTransportSettings(t *testing.T) {
-	transport := InitTransport()
+func TestNewTransportPreservesDefaultTransportSettings(t *testing.T) {
+	transport := newTransport()
 	httpTransport, ok := transport.rtp.(*http.Transport)
 	if !ok {
 		t.Fatal("expected transport.rtp to be *http.Transport")
@@ -59,7 +59,7 @@ func TestInitTransportPreservesDefaultTransportSettings(t *testing.T) {
 	}
 
 	if httpTransport == defaultTransport {
-		t.Fatal("expected InitTransport to clone the default transport")
+		t.Fatal("expected newTransport to clone the default transport")
 	}
 	if httpTransport.ForceAttemptHTTP2 != defaultTransport.ForceAttemptHTTP2 {
 		t.Fatal("expected ForceAttemptHTTP2 to match the default transport")

@@ -1,31 +1,11 @@
 package webtest
 
 import (
-	"bytes"
 	"encoding/csv"
 	"errors"
 	"os"
 	"path/filepath"
 )
-
-func FormatStringArray(buf *bytes.Buffer, arr []string, delimiter string) *bytes.Buffer {
-	buf.WriteString("[")
-	for i := range arr {
-		if i != len(arr)-1 {
-			buf.WriteByte('"')
-			buf.WriteString(arr[i])
-			buf.WriteByte('"')
-			buf.WriteString(delimiter)
-			buf.WriteByte(' ')
-		} else {
-			buf.WriteByte('"')
-			buf.WriteString(arr[i])
-			buf.WriteByte('"')
-		}
-	}
-	buf.WriteString("]")
-	return buf
-}
 
 // ReadCsv reads CSV records from path. Callers must not pass paths influenced
 // by untrusted input unless they first constrain them to an approved directory.
@@ -37,7 +17,7 @@ func ReadCsv(path string) (records [][]string, err error) {
 		return nil, err
 	}
 	defer func() {
-		closeErr := CloseFile(f)
+		closeErr := closeFile(f)
 		if closeErr == nil {
 			return
 		}
@@ -55,7 +35,7 @@ func ReadCsv(path string) (records [][]string, err error) {
 	return records, nil
 }
 
-func WriteToFile(f *os.File, b []byte) error {
+func writeToFile(f *os.File, b []byte) error {
 	if _, err := f.Write(b); err != nil {
 		return err
 	}
@@ -65,7 +45,7 @@ func WriteToFile(f *os.File, b []byte) error {
 	return nil
 }
 
-func CloseFile(file *os.File) error {
+func closeFile(file *os.File) error {
 	if file == nil {
 		return nil
 	}

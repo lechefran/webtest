@@ -7,13 +7,13 @@ import (
 	"time"
 )
 
-type Transport struct {
+type transport struct {
 	rtp    http.RoundTripper
 	dialer *net.Dialer
 }
 
-func InitTransport() *Transport {
-	t := &Transport{
+func newTransport() *transport {
+	t := &transport{
 		dialer: &net.Dialer{
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
@@ -37,10 +37,10 @@ func InitTransport() *Transport {
 	return t
 }
 
-func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
+func (t *transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return t.rtp.RoundTrip(r)
 }
 
-func (t *Transport) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+func (t *transport) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	return t.dialer.DialContext(ctx, network, addr)
 }
