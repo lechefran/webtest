@@ -926,7 +926,7 @@ func TestClientSetHeaders(t *testing.T) {
 		Header: headers,
 	}
 
-	SetHeaders(&req, map[string]string{"key": "value"})
+	setHeaders(&req, map[string]string{"key": "value"})
 	if req.Header.Get("key") != "value" {
 		t.Error("Request has no headers attached")
 	}
@@ -945,7 +945,7 @@ func TestDefaultLogFilePathUsesWindowsSafeTimestamp(t *testing.T) {
 }
 
 func TestSetHeadersWithNilRequest(t *testing.T) {
-	SetHeaders(nil, map[string]string{"key": "value"})
+	setHeaders(nil, map[string]string{"key": "value"})
 }
 
 func TestSetHeadersWithNilMap(t *testing.T) {
@@ -953,7 +953,7 @@ func TestSetHeadersWithNilMap(t *testing.T) {
 		Header: map[string][]string{},
 	}
 
-	SetHeaders(req, nil)
+	setHeaders(req, nil)
 	if req.Header.Get("key") != "" {
 		t.Error("Expected header map to remain unchanged")
 	}

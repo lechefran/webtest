@@ -36,7 +36,7 @@ func TestWriteToFileReturnsError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := WriteToFile(f, []byte("entry")); err == nil {
+	if err := writeToFile(f, []byte("entry")); err == nil {
 		t.Fatal("expected write error for closed file")
 	}
 }

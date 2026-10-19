@@ -1,16 +1,40 @@
 # webtest
 
-`webtest` is a lightweight HTTP client helper for API testing and benchmark-style CLI workflows.
+[![CI](https://github.com/lechefran/webtest/actions/workflows/ci.yml/badge.svg)](https://github.com/lechefran/webtest/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/lechefran/webtest.svg)](https://pkg.go.dev/github.com/lechefran/webtest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/lechefran/webtest)](https://goreportcard.com/report/github.com/lechefran/webtest)
+[![Release](https://img.shields.io/github/v/release/lechefran/webtest?sort=semver)](https://github.com/lechefran/webtest/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-It wraps common request methods (`GET`, `POST`, `PATCH`, `PUT`, `DELETE`), optional request logging to file, URL query param assembly, and CSV loading for data-driven request loops.
+A lightweight Go HTTP client for **API testing** and **data-driven benchmark** workflows.
+
+`webtest` wraps the common request methods with a chainable client. It prints a colored, timed summary of every call and can log full request and response details to a file. That makes it a fast way to script smoke tests, replay CSV-driven request loops, or get rough latency numbers from the command line.
+
+```text
+GET http://localhost:8080/resource 200 OK total=0.043s connect=0.007s
+GET http://localhost:8080/resource 200 OK total=0.012s conn=reused
+POST http://localhost:8080/resource 201 Created total=0.051s conn=reused sent=512b received=1.25Kb
+```
+
+## Features
+
+- **Simple API:** `Get`, `Post`, `Patch`, `Put` and `Delete` return a standard `*http.Response` and `error`.
+- **Per-request timing:** total wall-clock time, TCP connect time, and connection-reuse detection.
+- **Colored console output** by status class (2xx green, 3xx yellow, everything else red).
+- **Optional file logging** of headers, request bodies, response bodies and payload sizes, as JSON lines.
+- **Data-driven loops** with `ReadCsv` and `AddQueryParams`.
+- **SSRF protection:** an optional origin allowlist, enforced on the initial request and on every redirect.
+- **Sensible defaults:** a 30s end-to-end timeout, connection pooling, and concurrency-safe configuration.
 
 ## Install
 
-```text
-go get github.com/lechefran/webtest
+Requires Go 1.27 or later.
+
+```sh
+go get github.com/lechefran/webtest@latest
 ```
 
-## Core Usage
+## Quick start
 
 ```go
 package main
@@ -22,89 +46,56 @@ import (
 )
 
 func main() {
-	headers := map[string]string{
-		"Content-Type": "application/json",
-	}
-
-	client := webtest.
-		InitWebClient().
-		Headers(headers).
-		Options(webtest.WebClientOptions{
-			WriteToFile: true,
-			FilePath:    "./log/requests.log",
-		})
+	client := webtest.InitWebClient().
+		Headers(map[string]string{"Content-Type": "application/json"})
 
 	res, err := client.Get("http://localhost:8080/health")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer func() {
-		if err := client.CloseResponse(res); err != nil {
-			log.Println(err)
-		}
-	}()
+	defer client.CloseResponse(res)
+
+	if !webtest.Is2xxSuccessful(res) {
+		log.Fatalf("health check failed: %s", res.Status)
+	}
 }
 ```
 
-## Data-Driven Benchmark Pattern
+## Data-driven requests
 
-Use this pattern when requests are driven by input files (IDs, keywords, filters, etc.): read CSV rows, map row values into query params, execute requests in a loop, and optionally log each call.
-
-`ReadCsv(path)` opens the path supplied by the caller. Do not pass a path derived
-from untrusted input unless the application first constrains it to an approved
-directory. Cleaning or normalizing a path alone does not prevent directory
-traversal or symlink escape.
+Read input rows from a CSV file, map each row into query parameters, and run the requests in a loop:
 
 ```go
-package main
+client := webtest.InitWebClient().Options(webtest.WebClientOptions{
+	WriteToFile: true,
+	FilePath:    "./log/request-results.log",
+	LogMetadata: true,
+})
 
-import (
-	"log"
+rows, err := webtest.ReadCsv("./csv/input.csv")
+if err != nil {
+	log.Fatal(err)
+}
 
-	"github.com/lechefran/webtest"
-)
-
-func main() {
-	endpointURL := "http://localhost:8080/resource"
-	headers := map[string]string{
-		"Content-Type": "application/json",
+for _, row := range rows {
+	if len(row) < 2 {
+		continue
 	}
 
-	client := webtest.
-		InitWebClient().
-		Headers(headers).
-		Options(webtest.WebClientOptions{
-			WriteToFile: true,
-			FilePath:    "./log/request-results.txt",
-		})
-
-	rows, err := webtest.ReadCsv("./csv/input.csv")
+	url, err := client.AddQueryParams("http://localhost:8080/resource", map[string]string{
+		"key":   row[0],
+		"value": row[1],
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	for _, row := range rows {
-		if len(row) < 2 {
-			continue
-		}
-
-		params := map[string]string{
-			"key":   row[0],
-			"value": row[1],
-		}
-
-		url, err := client.AddQueryParams(endpointURL, params)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		res, err := client.Get(url)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err := client.CloseResponse(res); err != nil {
-			log.Println(err)
-		}
+	res, err := client.Get(url)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := client.CloseResponse(res); err != nil {
+		log.Println(err)
 	}
 }
 ```
@@ -113,28 +104,28 @@ func main() {
 
 ```go
 type WebClientOptions struct {
-	WriteToFile   bool   // default false
-	FilePath      string // optional; autogenerated Windows-safe UTC timestamp filename when empty
-	WriteHeaders  bool   // append request headers as a JSON log line
-	WriteRequest  bool   // append request body as a JSON log line
-	WriteResponse bool   // append response body as a JSON log line
-	LogMetadata   bool   // append sent/received sizes to the call line
-	RequestTimeout time.Duration // total request timeout; defaults to 30s when unset
-	AllowedOrigins []string // optional exact HTTP(S) origins permitted for requests and redirects
+	WriteToFile    bool          // append request logs to a file (default false)
+	FilePath       string        // log file; autogenerated UTC timestamp name when empty
+	WriteHeaders   bool          // log request headers as a JSON line
+	WriteRequest   bool          // log the request body as a JSON line
+	WriteResponse  bool          // log the response body as a JSON line
+	LogMetadata    bool          // add sent/received sizes to the summary line
+	RequestTimeout time.Duration // end-to-end timeout; 30s when unset
+	AllowedOrigins []string      // optional exact HTTP(S) origins for requests and redirects
 }
 ```
 
-When file logging is enabled, `FilePath` is trusted local filesystem
-configuration: the client appends logs to that path. Do not populate it from
-untrusted input. Paths containing a `..` segment are rejected, but absolute paths
-and symlinks are not confined to a directory. If untrusted users need to select
-logs, map their choices to application-controlled paths instead.
+- `Options(webtest.WebClientOptions{})` resets everything to defaults.
+- If `WriteToFile` is true and `FilePath` is empty, one log file named with a Windows-safe UTC timestamp is created in the current directory and reused. Call `client.ClearGeneratedLogFilePath()` to start a fresh one.
+- Idle connections stay pooled. Call `client.CloseIdleConnections()` to flush them.
+
+See the [package documentation](https://pkg.go.dev/github.com/lechefran/webtest) for the full API and runnable examples.
+
+## Security
 
 ### Restricting request destinations
 
-When request URLs can be influenced by untrusted input, configure `AllowedOrigins`
-to restrict the client to explicit origins. Origins include the scheme and port,
-for example:
+When request URLs can be influenced by untrusted input, set `AllowedOrigins` so the client only talks to the origins you name:
 
 ```go
 client := webtest.InitWebClient().Options(webtest.WebClientOptions{
@@ -145,82 +136,33 @@ client := webtest.InitWebClient().Options(webtest.WebClientOptions{
 })
 ```
 
-The allowlist is checked before the initial request and on every redirect. Entries
-must be absolute HTTP(S) origins without credentials, paths, queries, or fragments.
-Hostnames are matched exactly; wildcards are not supported. An empty allowlist
-preserves the unrestricted behavior for existing API-testing workflows. Configure
-an allowlist at the application boundary whenever destinations may come from
-untrusted input.
+- Origins include the scheme and port.
+- Entries must not contain credentials, paths, queries or fragments.
+- Hostnames are matched exactly, and wildcards aren't supported.
+- An empty allowlist allows any destination.
 
-## Error Handling Model
+### File paths
 
-The package now follows direct Go-style error returns:
+`FilePath` and the path passed to `ReadCsv` are **trusted local configuration**. Never populate them from untrusted input. Paths containing `..` are rejected for logging, but absolute paths and symlinks aren't confined to a directory. If users need to choose a file, map their choice to a path your application controls.
 
-- request creation and execution errors are returned directly
-- `ReadCsv` returns `([][]string, error)`
-- `AddQueryParams` returns `(string, error)`
-- `CloseResponse` returns `error`
-- file write/close failures are returned as errors (not process exits)
-- `Headers(...)` and `Options(...)` now take values (not pointers) and copy the provided config.
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-## Breaking Changes
+## Limitations
 
-If you are upgrading from an older version:
+`webtest` is tuned for testing and benchmarking, not for long-lived production traffic.
 
-1. `HandleError`/`DEFAULT`/`SOFT`/`STRICT` were removed.
-2. `ReadCsv(path)` changed from `[][]string` to `([][]string, error)`.
-3. `AddQueryParams(...)` changed from `string` to `(string, error)`.
-4. `CloseResponse(...)` changed from no return value to `error`.
-5. `Headers(...)` changed from `*map[string]string` to `map[string]string`.
-6. `Options(...)` changed from `*WebClientOptions` to `WebClientOptions`.
-7. Logging options were flattened into `WebClientOptions`; the nested `WriteSettings` type was removed.
-8. Nested logging fields such as `WriteSettings.writeHeaders`, `WriteSettings.writeRequest`, `WriteSettings.writeResponse`, and `WriteSettings.logMetadata` are now configured as `WriteHeaders`, `WriteRequest`, `WriteResponse`, and `LogMetadata` directly on `WebClientOptions`.
-9. Requests now use a 30 second end-to-end timeout by default unless `RequestTimeout` is explicitly set.
+- `WriteRequest`, `WriteResponse` and `LogMetadata` buffer full bodies in memory, so they aren't suitable for very large or streaming payloads.
+- `RequestTimeout` is a real end-to-end timeout. Long-running requests must raise it explicitly.
+- The transport is a clone of Go's default `http.Transport` with a custom dialer. If you need full transport control, use `net/http` directly.
 
-## Notes
+## Upgrading
 
-- `Options(WebClientOptions{})` resets to default options.
-- Requests use a 30 second end-to-end timeout by default. Set `RequestTimeout` to override it. Leaving it unset does not disable timeouts; it uses the package default.
-- If `WriteToFile` is true and `FilePath` is empty, one Windows-safe UTC timestamp log file is created in the current directory and reused for subsequent requests from that client configuration.
-- Calling `Options(...)` again clears the cached autogenerated log file path. If you are reconfiguring the same client and still want a fresh autogenerated file, this happens automatically on the next logged request.
-- Call `client.ClearGeneratedLogFilePath()` if you want the same `WebClient` instance to start a fresh autogenerated log file on a later run without replacing the rest of the client configuration.
-- The console output colors requests by status class (2xx green, 3xx yellow, others red).
-- Idle connections are kept for pooling by default; call `client.CloseIdleConnections()` when you want to explicitly flush the pool.
+The package is pre-1.0, so minor versions may contain breaking changes. See [CHANGELOG.md](CHANGELOG.md) for migration notes.
 
-## Beta Caveats
+## Contributing
 
-This beta is tuned for API testing and benchmark-style request workflows. Consumers with long-lived, streaming, or highly customized HTTP usage should review the caveats below before adopting it broadly.
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) before opening a pull request.
 
-- `RequestTimeout` defaults to 30 seconds. This is a real end-to-end timeout, so long-running requests must opt into a larger value explicitly.
-- `WriteRequest`, `WriteResponse`, and `LogMetadata` can buffer full bodies into memory for formatting and size measurement.
-- Autogenerated log files are cached per `WebClient` instance. Reusing the same client reuses the same autogenerated file until options are replaced or `ClearGeneratedLogFilePath()` is called.
-- The package transport clones Go's default `http.Transport` and overrides `DialContext` with the package dialer. That preserves most standard transport behavior, but consumers needing full transport control should still evaluate whether the package defaults match their production requirements.
+## License
 
-## Logging Disclaimer
-
-`WriteRequest`, `WriteResponse`, and `LogMetadata` may require the library to fully read request or response bodies into memory in order to format or measure them for logging.
-
-- Large payloads can increase memory usage.
-- Streaming-style request or response handling may no longer behave like a pure pass-through flow when these options are enabled.
-- Response logging and metadata collection may force the full body to be read before the caller consumes it.
-
-These logging features are intentionally left available for benchmarking and diagnostics. Consumers should enable them selectively based on their own payload sizes, runtime limits, and streaming requirements.
-
-## Timing Output
-
-Each request log line now reports per-request timing values:
-
-```text
-GET http://localhost:8080/resource 200 OK total=0.043s connect=0.007s
-GET http://localhost:8080/resource 200 OK total=0.012s conn=reused
-```
-
-If `LogMetadata` is enabled, the call line also includes request/response payload sizes in readable units:
-
-```text
-POST http://localhost:8080/resource 200 OK total=0.043s connect=0.007s sent=512b received=1.25Kb
-```
-
-- `total`: full elapsed time for that request (`client.Do` wall-clock duration).
-- `connect`: TCP connect time for new connections.
-- `conn=reused`: the request used an existing keep-alive connection, so no new connect step occurred.
+[MIT](LICENSE) © Francis Sy
